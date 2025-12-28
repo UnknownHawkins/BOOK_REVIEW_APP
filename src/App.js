@@ -1,1198 +1,2415 @@
-import React, { useState, useEffect } from "react";
-import "./index.css";
+import React, { Component } from 'react';
+import './App.css';
 
-// Storage Keys
-const STORAGE = {
-  USERS: "whitebook_users",
-  CURRENT_USER: "whitebook_current_user",
-  LIBRARY: "whitebook_library",
-  REVIEWS: "whitebook_reviews"
-};
-
-// Helper Functions
-const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-const hashPassword = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-};
-
-const generateCaptcha = () => {
-  const a = Math.floor(Math.random() * 10) + 1;
-  const b = Math.floor(Math.random() * 10) + 1;
-  return { question: `${a} + ${b} = ?`, answer: a + b };
-};
-
-// Initialize Admin
-const initAdmin = async () => {
-  const users = JSON.parse(localStorage.getItem(STORAGE.USERS) || "[]");
-  if (users.length === 0) {
-    const adminHash = await hashPassword("QWERTY@123");
-    const adminUser = {
-      id: generateId(),
-      username: "Anonymous@",
-      email: "anonymous@bookhub.com",
-      passwordHash: adminHash,
-      role: "admin",
-      avatar: "A",
-      createdAt: new Date().toISOString()
+class BookHubApp extends Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      users: JSON.parse(localStorage.getItem('bookhub_users')) || [],
+      admins: JSON.parse(localStorage.getItem('bookhub_admins')) || [],
+      currentUser: JSON.parse(localStorage.getItem('bookhub_current_user')) || null,
+      userLibrary: JSON.parse(localStorage.getItem('user_library')) || [],
+      userReviews: JSON.parse(localStorage.getItem('user_reviews')) || [],
+      showLoginModal: false,
+      showBookModal: false,
+      activeBook: null,
+      activeTab: 'user',
+      activeForm: 'user-login',
+      searchTerm: '',
+      activeGenre: 'all',
+      isMobileMenuOpen: false,
+      searchResults: [],
+      showSearchResults: false,
+      showReviewModal: false,
+      reviewData: {
+        rating: 0,
+        title: '',
+        content: '',
+        memeReview: ''
+      },
+      registerData: {
+        name: '',
+        username: '',
+        email: '',
+        password: '',
+        confirmPassword: ''
+      },
+      loginData: {
+        username: '',
+        password: ''
+      },
+      adminData: {
+        username: '',
+        password: '',
+        securityCode: ''
+      },
+      failedAttempts: JSON.parse(localStorage.getItem('failed_attempts')) || {},
+      isLocked: false,
+      lockUntil: JSON.parse(localStorage.getItem('lock_until')) || 0,
+      // NEW: Library filter and sort states
+      libraryFilter: 'all',
+      librarySort: 'title',
+      // NEW: Update progress modal state
+      showProgressModal: false,
+      progressData: {
+        currentPage: 0,
+        status: 'to-read'
+      }
     };
-    localStorage.setItem(STORAGE.USERS, JSON.stringify([adminUser]));
+
+    this.encryptionKey = this.generateEncryptionKey();
+    this.sessionTimeout = 30 * 60 * 1000;
+    
+    this.API_CONFIG = {
+      GOOGLE_BOOKS: {
+        BASE_URL: 'https://www.googleapis.com/books/v1/volumes',
+        API_KEY: 'AIzaSyCpqKevtXzm-SuF62BqwQztTvFRB2g3Cd4'
+      }
+    };
+    this.sampleBooks = [
+      {
+        id: '1',
+        title: 'The Ramayana',
+        author: 'Valmiki',
+        cover: 'https://i.pinimg.com/736x/66/dd/c4/66ddc40d895208649668f74df692de0e.jpg',
+        pdfUrl: 'https://ebooks.tirumala.org/downloads/valmiki_ramayanam.pdf',
+        hindiPdfUrl: 'https://embassyofindiabangkok.gov.in/public/assets/pdf/Valmiki%20Ramayana%20aur%20Ramakien%20Ek%20Tulnamatmak%20Adhyayan.pdf',
+        pages: 500,
+        genre: 'indian',
+        description: 'The Ramayana is an ancient Indian epic which narrates the struggle of the divine prince Rama to rescue his wife Sita from the demon king Ravana.',
+        contentPreview: 'In the beginning, there was the kingdom of Ayodhya, ruled by the wise King Dasharatha...',
+        rating: 4.8,
+        reviews: 245,
+        trending: true,
+        publishedYear: '500 BCE',
+        language: 'Sanskrit'
+      },
+      {
+        id: '2',
+        title: 'The Mahabharata',
+        author: 'Vyasa',
+        cover: 'https://i.pinimg.com/1200x/a1/77/3d/a1773d6d0798ec7a2f938e3cf19885ea.jpg',
+        pdfUrl: 'https://ebooks.tirumala.org/downloads/the_mahabharata.pdf',
+        hindiPdfUrl: 'https://ncert.nic.in/textbook/pdf/ghmb101.pdf',
+        pages: 1200,
+        genre: 'indian',
+        description: 'The Mahabharata is one of the two major Sanskrit epics of ancient India, detailing the legendary Kurukshetra War fought between the Pandavas and the Kauravas.',
+        contentPreview: 'The epic begins with King Shantanu of Hastinapura, who falls in love with the river goddess Ganga...',
+        rating: 4.8,
+        reviews: 76,
+        trending: true,
+        publishedYear: '400 BCE',
+        language: 'Sanskrit, Hindi'
+      },
+      {
+        id: '3',
+        title: 'To Kill a Mockingbird',
+        author: 'Harper Lee',
+        cover: 'https://i.pinimg.com/736x/6f/2d/5c/6f2d5c0ffb39d41a54cf4cb0e8517778.jpg',
+        pdfUrl: 'https://www.raio.org/TKMFullText.pdf',
+        pages: 281,
+        genre: 'fiction',
+        description: 'A gripping, heart-wrenching tale of race and identity in the American South during the 1930s.',
+        contentPreview: 'When he was nearly thirteen, my brother Jem got his arm badly broken at the elbow...',
+        rating: 4.7,
+        reviews: 189,
+        trending: false,
+        publishedYear: '1960',
+        language: 'English'
+      }
+    ];
+    this.sampleReviews = [
+      {
+        id: '1',
+        bookId: '1',
+        userId: 'user123',
+        userName: 'BookwormRavi',
+        userAvatar: 'https://ui-avatars.com/api/?name=Ravi&background=2563eb&color=fff',
+        rating: 5,
+        title: 'Timeless Epic! 🙏',
+        content: 'The Ramayana is not just a story, it\'s a way of life. The characters, the values, the teachings - everything about this epic is profound.',
+        date: '2024-01-15',
+        likes: 45,
+        memeReview: 'When you realize Ramayana has more plot twists than your favorite Netflix show 😂'
+      }
+    ];
   }
-};
-
-// Demo Books
-const DEMO_BOOKS = [
-  {
-    id: "demo1",
-    title: "The Great Gatsby",
-    authors: ["F. Scott Fitzgerald"],
-    thumbnail: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=600&fit=crop",
-    description: "A classic novel of the Jazz Age, exploring themes of idealism, resistance to change, social upheaval, and excess.",
-    rating: 4.5,
-    pages: 218,
-    genre: ["Classic", "Fiction"],
-    published: "1925",
-    color: "#3b82f6"
-  },
-  {
-    id: "demo2",
-    title: "To Kill a Mockingbird",
-    authors: ["Harper Lee"],
-    thumbnail: "https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&h=600&fit=crop",
-    description: "A gripping, heart-wrenching, and wholly remarkable tale of coming-of-age in a South poisoned by prejudice.",
-    rating: 4.8,
-    pages: 324,
-    genre: ["Classic", "Fiction"],
-    published: "1960",
-    color: "#10b981"
-  },
-  {
-    id: "demo3",
-    title: "1984",
-    authors: ["George Orwell"],
-    thumbnail: "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=400&h=600&fit=crop",
-    description: "A dystopian social science fiction novel that examines the consequences of totalitarianism.",
-    rating: 4.7,
-    pages: 328,
-    genre: ["Dystopian", "Fiction"],
-    published: "1949",
-    color: "#8b5cf6"
-  },
-  {
-    id: "demo4",
-    title: "Pride and Prejudice",
-    authors: ["Jane Austen"],
-    thumbnail: "https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&h=600&fit=crop",
-    description: "A romantic novel of manners that depicts the emotional development of protagonist Elizabeth Bennet.",
-    rating: 4.6,
-    pages: 432,
-    genre: ["Romance", "Classic"],
-    published: "1813",
-    color: "#f97316"
+  componentDidMount() {
+    this.initializeDefaultAdmin();
+    this.initializeTheme();
+    this.initializeParticles();
+    this.loadSampleData();
+    this.setupEventListeners();
+    this.checkAccountLock();
+    this.setupSessionTimer();
   }
-];
 
-function App() {
-  // State
-  const [currentUser, setCurrentUser] = useState(null);
-  const [library, setLibrary] = useState([]);
-  const [reviews, setReviews] = useState({});
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("discover");
-  const [activeModal, setActiveModal] = useState(null);
-  const [modalData, setModalData] = useState({});
-  const [captcha, setCaptcha] = useState(generateCaptcha());
-  const [newReview, setNewReview] = useState({ text: "", rating: 5 });
+  componentWillUnmount() {
+    this.clearSessionTimer();
+  }
 
-  // Initialize
-  useEffect(() => {
-    initAdmin();
+  // Security Methods
+  generateEncryptionKey = () => {
+    const existingKey = localStorage.getItem('encryption_key');
+    if (existingKey) return existingKey;
     
-    // Load saved data
-    const savedUser = localStorage.getItem(STORAGE.CURRENT_USER);
-    const savedLibrary = localStorage.getItem(STORAGE.LIBRARY);
-    const savedReviews = localStorage.getItem(STORAGE.REVIEWS);
-    
-    if (savedUser) setCurrentUser(JSON.parse(savedUser));
-    if (savedLibrary) setLibrary(JSON.parse(savedLibrary));
-    if (savedReviews) setReviews(JSON.parse(savedReviews));
-  }, []);
+    const newKey = 'bookhub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('encryption_key', newKey);
+    return newKey;
+  }
 
-  // Save data
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(STORAGE.CURRENT_USER, JSON.stringify(currentUser));
+  hashPassword = (password) => {
+    const salt = 'bookhub_salt_2024_secure';
+    const stringToHash = password + salt + this.encryptionKey;
+    return btoa(stringToHash.split('').reverse().join(''));
+  }
+
+  verifyPassword = (password, hashedPassword) => {
+    return this.hashPassword(password) === hashedPassword;
+  }
+
+  // Account Lock Security
+  checkAccountLock = () => {
+    const { lockUntil } = this.state;
+    const now = Date.now();
+    
+    if (lockUntil > now) {
+      this.setState({ isLocked: true });
+      setTimeout(() => {
+        this.setState({ isLocked: false, lockUntil: 0 });
+        localStorage.removeItem('lock_until');
+      }, lockUntil - now);
     }
-  }, [currentUser]);
+  }
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE.LIBRARY, JSON.stringify(library));
-  }, [library]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE.REVIEWS, JSON.stringify(reviews));
-  }, [reviews]);
-
-  // Search Books
-  const searchBooks = async (query) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
+  recordFailedAttempt = (identifier) => {
+    const { failedAttempts } = this.state;
+    const attempts = (failedAttempts[identifier] || 0) + 1;
+    const newFailedAttempts = { ...failedAttempts, [identifier]: attempts };
     
-    setLoading(true);
-    try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=12`
-      );
-      const data = await response.json();
+    this.setState({ failedAttempts: newFailedAttempts });
+    localStorage.setItem('failed_attempts', JSON.stringify(newFailedAttempts));
+
+    if (attempts >= 5) {
+      const lockUntil = Date.now() + (15 * 60 * 1000);
+      this.setState({ isLocked: true, lockUntil });
+      localStorage.setItem('lock_until', JSON.stringify(lockUntil));
       
-      const books = (data.items || []).map(item => ({
-        id: item.id,
-        title: item.volumeInfo?.title || "Untitled Book",
-        authors: item.volumeInfo?.authors || ["Unknown Author"],
-        thumbnail: item.volumeInfo?.imageLinks?.thumbnail?.replace("http://", "https://") || 
-                  `https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=600&fit=crop&q=80`,
-        description: item.volumeInfo?.description || "No description available for this book.",
-        rating: (Math.random() * 1.5 + 3.5).toFixed(1),
-        pages: item.volumeInfo?.pageCount || Math.floor(Math.random() * 400) + 200,
-        genre: item.volumeInfo?.categories || ["Fiction"],
-        published: item.volumeInfo?.publishedDate?.split("-")[0] || "2023",
-        color: ["#3b82f6", "#8b5cf6", "#06b6d4", "#10b981", "#f97316"][Math.floor(Math.random() * 5)]
-      }));
+      setTimeout(() => {
+        this.setState({ 
+          isLocked: false, 
+          lockUntil: 0,
+          failedAttempts: { ...newFailedAttempts, [identifier]: 0 }
+        });
+        localStorage.removeItem('lock_until');
+        localStorage.setItem('failed_attempts', JSON.stringify({ ...newFailedAttempts, [identifier]: 0 }));
+      }, 15 * 60 * 1000);
       
-      setSearchResults(books);
-    } catch (error) {
-      console.error("Search error:", error);
-      alert("Failed to search books. Please try again.");
-    } finally {
-      setLoading(false);
+      return true;
     }
-  };
+    return false;
+  }
 
-  const loadDemoBooks = () => {
-    setSearchResults(DEMO_BOOKS);
-  };
+  resetFailedAttempts = (identifier) => {
+    const { failedAttempts } = this.state;
+    const newFailedAttempts = { ...failedAttempts, [identifier]: 0 };
+    this.setState({ failedAttempts: newFailedAttempts });
+    localStorage.setItem('failed_attempts', JSON.stringify(newFailedAttempts));
+  }
 
-  // FIXED: Start Exploring function
-  const startExploring = () => {
-    // Set active tab to discover if not already
-    setActiveTab("discover");
+  // Session Management
+  setupSessionTimer = () => {
+    this.sessionTimer = setTimeout(() => {
+      if (this.state.currentUser) {
+        this.handleLogout();
+        this.showToast('Session expired. Please login again.', 'warning');
+      }
+    }, this.sessionTimeout);
+  }
+  clearSessionTimer = () => {
+    if (this.sessionTimer) {
+      clearTimeout(this.sessionTimer);
+    }
+  }
+
+  resetSessionTimer = () => {
+    this.clearSessionTimer();
+    this.setupSessionTimer();
+  }
+
+  // Input Sanitization
+  sanitizeInput = (input) => {
+    if (typeof input !== 'string') return input;
+    return input
+      .replace(/[<>]/g, '')
+      .replace(/javascript:/gi, '')
+      .replace(/on\w+=/gi, '')
+      .trim();
+  }
+
+  validateEmail = (email) => {
+    const { users } = this.state;
+    const sanitizedEmail = this.sanitizeInput(email);
     
-    // Load demo books
-    setSearchResults(DEMO_BOOKS);
-    
-    // Also search for popular books online
-    searchBooks("best sellers 2024");
-  };
-
-  // Library Operations
-  const addToLibrary = (book) => {
-    if (library.some(b => b.id === book.id)) {
-      alert("This book is already in your library!");
-      return;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(sanitizedEmail)) {
+      return { valid: false, message: 'Please enter a valid email' };
     }
     
-    const enhancedBook = {
-      ...book,
-      addedDate: new Date().toISOString(),
-      favorite: false,
-      readProgress: 0
+    const disposableDomains = ['tempmail.com', 'throwaway.com', 'guerrillamail.com'];
+    const domain = sanitizedEmail.split('@')[1];
+    if (disposableDomains.includes(domain)) {
+      return { valid: false, message: 'Disposable email addresses are not allowed' };
+    }
+    
+    if (users.find(u => u.email === sanitizedEmail)) {
+      return { valid: false, message: 'Email already registered' };
+    }
+    
+    return { valid: true, message: 'Email looks perfect! ✨' };
+  }
+
+  validateUsername = (username) => {
+    const { users } = this.state;
+    const sanitizedUsername = this.sanitizeInput(username);
+    
+    if (sanitizedUsername.length < 3) {
+      return { valid: false, message: 'Username too short (min 3 chars)' };
+    }
+    if (sanitizedUsername.length > 20) {
+      return { valid: false, message: 'Username too long (max 20 chars)' };
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(sanitizedUsername)) {
+      return { valid: false, message: 'Only letters, numbers, and underscores' };
+    }
+    if (users.find(u => u.username === sanitizedUsername)) {
+      return { valid: false, message: 'Username already taken' };
+    }
+    
+    const reservedUsernames = ['admin', 'administrator', 'root', 'system', 'support'];
+    if (reservedUsernames.includes(sanitizedUsername.toLowerCase())) {
+      return { valid: false, message: 'This username is reserved' };
+    }
+    
+    return { valid: true, message: 'Looking good! 👍' };
+  }
+
+  checkPasswordStrength = (password) => {
+    let strength = 0;
+    let hints = [];
+
+    if (password.length >= 8) strength++;
+    else hints.push('at least 8 characters');
+
+    if (/[A-Z]/.test(password)) strength++;
+    else hints.push('one uppercase letter');
+
+    if (/[a-z]/.test(password)) strength++;
+    else hints.push('one lowercase letter');
+
+    if (/[0-9]/.test(password)) strength++;
+    else hints.push('one number');
+
+    if (/[^A-Za-z0-9]/.test(password)) strength++;
+    else hints.push('one special character');
+
+    const commonPasswords = ['password', '123456', 'qwerty', 'admin', 'letmein'];
+    if (commonPasswords.includes(password.toLowerCase())) {
+      strength = 0;
+      hints = ['This password is too common'];
+    }
+
+    return { strength, hints };
+  }
+
+  // Enhanced Authentication Methods
+  initializeDefaultAdmin = () => {
+    const { admins } = this.state;
+    if (admins.length === 0) {
+      const newAdmins = [...admins, {
+        id: 1,
+        username: 'Neurix',
+        password: this.hashPassword('Neurix@7217secure'),
+        securityCode: 'PasswordHighzacked',
+        createdAt: new Date().toISOString(),
+        lastLogin: null,
+        isActive: true,
+        role: 'super_admin'
+      }];
+      this.setState({ admins: newAdmins });
+      localStorage.setItem('bookhub_admins', JSON.stringify(newAdmins));
+    }
+  }
+
+  loginUser = (identifier, password, isAdmin = false) => {
+    if (this.state.isLocked) {
+      const remainingTime = Math.ceil((this.state.lockUntil - Date.now()) / 60000);
+      return { 
+        success: false, 
+        message: `Account temporarily locked. Try again in ${remainingTime} minutes.` 
+      };
+    }
+
+    const users = isAdmin ? this.state.admins : this.state.users;
+    const sanitizedIdentifier = this.sanitizeInput(identifier);
+    const user = users.find(u => 
+      u.username === sanitizedIdentifier || u.email === sanitizedIdentifier
+    );
+    if (!user) {
+      this.recordFailedAttempt(sanitizedIdentifier);
+      return { success: false, message: 'Invalid credentials' };
+    }
+
+    if (!user.isActive) {
+      return { success: false, message: 'Account is deactivated' };
+    }
+
+    if (!this.verifyPassword(password, user.password)) {
+      const shouldLock = this.recordFailedAttempt(sanitizedIdentifier);
+      if (shouldLock) {
+        return { success: false, message: 'Too many failed attempts. Account locked for 15 minutes.' };
+      }
+      return { success: false, message: 'Invalid credentials' };
+    }
+
+    this.resetFailedAttempts(sanitizedIdentifier);
+    
+    user.lastLogin = new Date().toISOString();
+    
+    if (isAdmin) {
+      const newAdmins = this.state.admins.map(a => a.id === user.id ? user : a);
+      this.setState({ admins: newAdmins });
+      localStorage.setItem('bookhub_admins', JSON.stringify(newAdmins));
+    } else {
+      const newUsers = this.state.users.map(u => u.id === user.id ? user : u);
+      this.setState({ users: newUsers });
+      localStorage.setItem('bookhub_users', JSON.stringify(newUsers));
+    }
+
+    const currentUser = { 
+      ...user, 
+      isAdmin,
+      sessionStart: Date.now()
     };
     
-    setLibrary(prev => [...prev, enhancedBook]);
-    alert(`"${book.title}" has been added to your library!`);
-  };
-
-  const removeFromLibrary = (bookId) => {
-    const book = library.find(b => b.id === bookId);
-    if (book && window.confirm(`Remove "${book.title}" from your library?`)) {
-      setLibrary(prev => prev.filter(b => b.id !== bookId));
-    }
-  };
-
-  const addCustomBook = (bookData) => {
-    const newBook = {
-      id: generateId(),
-      ...bookData,
-      source: "custom",
-      owner: currentUser?.username || "anonymous",
-      addedDate: new Date().toISOString(),
-      rating: 0,
-      pages: 250,
-      color: "#3b82f6"
-    };
-    
-    setLibrary(prev => [...prev, newBook]);
-    setActiveModal(null);
-    alert("Your custom book has been added to the library!");
-  };
-
-  // Review Functions - FIXED
-  const submitReview = (bookId) => {
-    if (!currentUser) {
-      alert("Please login to submit a review");
-      setActiveModal("login");
-      return;
-    }
-    
-    if (!newReview.text.trim()) {
-      alert("Please write your review before submitting");
-      return;
-    }
-    
-    const review = {
-      id: generateId(),
-      bookId,
-      userId: currentUser.id,
-      username: currentUser.username,
-      avatar: currentUser.avatar || currentUser.username.charAt(0).toUpperCase(),
-      text: newReview.text,
-      rating: newReview.rating,
-      date: new Date().toISOString()
-    };
-    
-    setReviews(prev => {
-      const bookReviews = prev[bookId] || [];
-      return { ...prev, [bookId]: [...bookReviews, review] };
+    this.setState({ 
+      currentUser,
+      showLoginModal: false,
+      loginData: { username: '', password: '' }
     });
     
-    // Reset newReview for this book
-    setNewReview({ text: "", rating: 5 });
-    alert("Thank you for your review!");
-  };
+    localStorage.setItem('bookhub_current_user', JSON.stringify(currentUser));
+    this.resetSessionTimer();
 
-  const quickAddReview = (bookId) => {
-    if (!currentUser) {
-      alert("Please login to add a review");
-      setActiveModal("login");
+    return { success: true, user: currentUser };
+  }
+
+  loginAdmin = (username, password, securityCode) => {
+    if (this.state.isLocked) {
+      const remainingTime = Math.ceil((this.state.lockUntil - Date.now()) / 60000);
+      return { 
+        success: false, 
+        message: `Account temporarily locked. Try again in ${remainingTime} minutes.` 
+      };
+    }
+
+    const sanitizedUsername = this.sanitizeInput(username);
+    const admin = this.state.admins.find(a => a.username === sanitizedUsername);
+
+    if (!admin) {
+      this.recordFailedAttempt(sanitizedUsername);
+      return { success: false, message: 'Invalid admin credentials' };
+    }
+
+    if (!this.verifyPassword(password, admin.password)) {
+      const shouldLock = this.recordFailedAttempt(sanitizedUsername);
+      if (shouldLock) {
+        return { success: false, message: 'Too many failed attempts. Account locked for 15 minutes.' };
+      }
+      return { success: false, message: 'Invalid admin credentials' };
+    }
+
+    if (admin.securityCode !== securityCode) {
+      this.recordFailedAttempt(sanitizedUsername);
+      return { success: false, message: 'Invalid security code' };
+    }
+
+    this.resetFailedAttempts(sanitizedUsername);
+    
+    admin.lastLogin = new Date().toISOString();
+    
+    const currentUser = { 
+      ...admin, 
+      isAdmin: true,
+      sessionStart: Date.now()
+    };
+    
+    this.setState({ 
+      currentUser,
+      showLoginModal: false,
+      adminData: { username: '', password: '', securityCode: '' }
+    });
+    
+    localStorage.setItem('bookhub_current_user', JSON.stringify(currentUser));
+    this.resetSessionTimer();
+
+    return { success: true, user: currentUser };
+  }
+
+  // Enhanced User Registration
+  registerUser = (userData) => {
+    const { users } = this.state;
+    
+    const usernameValidation = this.validateUsername(userData.username);
+    if (!usernameValidation.valid) {
+      return { success: false, message: usernameValidation.message };
+    }
+
+    const emailValidation = this.validateEmail(userData.email);
+    if (!emailValidation.valid) {
+      return { success: false, message: emailValidation.message };
+    }
+
+    if (userData.password !== userData.confirmPassword) {
+      return { success: false, message: 'Passwords do not match' };
+    }
+
+    const passwordStrength = this.checkPasswordStrength(userData.password);
+    if (passwordStrength.strength < 3) {
+      return { 
+        success: false, 
+        message: `Password too weak. ${passwordStrength.hints.join(', ')}` 
+      };
+    }
+
+    const newUser = {
+      id: 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      name: this.sanitizeInput(userData.name),
+      username: this.sanitizeInput(userData.username),
+      email: this.sanitizeInput(userData.email),
+      password: this.hashPassword(userData.password),
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=2563eb&color=fff`,
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString(),
+      isActive: true,
+      emailVerified: false,
+      role: 'user',
+      readingStats: {
+        booksRead: 0,
+        pagesRead: 0,
+        readingTime: 0,
+        favoriteGenres: []
+      }
+    };
+
+    const newUsers = [...users, newUser];
+    this.setState({ 
+      users: newUsers,
+      currentUser: { ...newUser, isAdmin: false },
+      showLoginModal: false,
+      registerData: { name: '', username: '', email: '', password: '', confirmPassword: '' }
+    });
+    
+    localStorage.setItem('bookhub_users', JSON.stringify(newUsers));
+    localStorage.setItem('bookhub_current_user', JSON.stringify({ ...newUser, isAdmin: false }));
+
+    return { success: true, user: newUser };
+  }
+
+  // UI Management
+  showLoginModal = () => {
+    this.setState({ 
+      showLoginModal: true,
+      activeTab: 'user',
+      activeForm: 'user-login'
+    });
+  }
+
+  hideLoginModal = () => {
+    this.setState({ 
+      showLoginModal: false
+    });
+  }
+
+  switchLoginTab = (tab) => {
+    this.setState({ 
+      activeTab: tab,
+      activeForm: tab === 'user' ? 'user-login' : 'admin-login'
+    });
+  }
+
+  showRegistration = () => {
+    this.setState({ activeForm: 'register' });
+  }
+
+  showUserLogin = () => {
+    this.setState({ 
+      activeTab: 'user',
+      activeForm: 'user-login'
+    });
+  }
+
+  // Mobile Menu Toggle
+  toggleMobileMenu = () => {
+    this.setState(prevState => ({
+      isMobileMenuOpen: !prevState.isMobileMenuOpen
+    }));
+  }
+
+  closeMobileMenu = () => {
+    this.setState({ isMobileMenuOpen: false });
+  }
+
+  // NEW: Handle Add Book - Redirect to Search
+  handleAddBook = () => {
+    // Scroll to discover section and focus search
+    const discoverSection = document.getElementById('discover');
+    if (discoverSection) {
+      discoverSection.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // Focus search input after a small delay
+    setTimeout(() => {
+      const searchInput = document.querySelector('input[placeholder*="Search for books"]');
+      if (searchInput) {
+        searchInput.focus();
+      }
+    }, 500);
+    
+    this.showToast('Search for books to add to your library!', 'info');
+  }
+
+  // NEW: Library Filter and Sort Functions
+  handleLibraryFilter = (filter) => {
+    this.setState({ libraryFilter: filter });
+  }
+
+  handleLibrarySort = (sort) => {
+    this.setState({ librarySort: sort });
+  }
+
+  // NEW: Get filtered and sorted library
+  getFilteredSortedLibrary = () => {
+    const { userLibrary, libraryFilter, librarySort } = this.state;
+    
+    let filtered = userLibrary;
+    
+    // Apply filter
+    if (libraryFilter !== 'all') {
+      filtered = userLibrary.filter(book => book.status === libraryFilter);
+    }
+    
+    // Apply sort
+    const sorted = [...filtered].sort((a, b) => {
+      switch (librarySort) {
+        case 'title':
+          return a.title.localeCompare(b.title);
+        case 'author':
+          return a.author.localeCompare(b.author);
+        case 'date-added':
+          return new Date(b.addedDate) - new Date(a.addedDate);
+        case 'progress':
+          return (b.currentPage / b.pages) - (a.currentPage / a.pages);
+        default:
+          return 0;
+      }
+    });
+    
+    return sorted;
+  }
+
+  // NEW: Update Progress Functions
+  showProgressModal = (book) => {
+    this.setState({ 
+      showProgressModal: true,
+      activeBook: book,
+      progressData: {
+        currentPage: book.currentPage || 0,
+        status: book.status || 'to-read'
+      }
+    });
+  }
+
+  hideProgressModal = () => {
+    this.setState({ 
+      showProgressModal: false,
+      activeBook: null
+    });
+  }
+
+  handleProgressInputChange = (field, value) => {
+    this.setState(prevState => ({
+      progressData: {
+        ...prevState.progressData,
+        [field]: value
+      }
+    }));
+  }
+
+  updateBookProgress = (e) => {
+    e.preventDefault();
+    const { activeBook, progressData, userLibrary } = this.state;
+    
+    if (!activeBook) return;
+
+    const updatedLibrary = userLibrary.map(book => {
+      if (book.id === activeBook.id) {
+        const progressPercentage = progressData.currentPage > 0 ? 
+          Math.min(100, Math.round((progressData.currentPage / book.pages) * 100)) : 0;
+        
+        return {
+          ...book,
+          currentPage: parseInt(progressData.currentPage) || 0,
+          status: progressData.status,
+          progressPercentage: progressPercentage
+        };
+      }
+      return book;
+    });
+
+    this.setState({ 
+      userLibrary: updatedLibrary,
+      showProgressModal: false
+    });
+
+    localStorage.setItem('user_library', JSON.stringify(updatedLibrary));
+    this.showToast('Progress updated successfully!', 'success');
+  }
+
+  // Review System Methods
+  showReviewModal = (book = null) => {
+    if (!this.state.currentUser) {
+      this.showToast('Please login to write a review', 'warning');
+      this.showLoginModal();
       return;
     }
     
-    const reviewText = prompt("Write your review:");
-    if (reviewText && reviewText.trim()) {
-      const ratingInput = prompt("Rating (1-5):", "5");
-      const rating = Math.min(5, Math.max(1, parseInt(ratingInput) || 5));
-      
-      const review = {
-        id: generateId(),
-        bookId,
-        userId: currentUser.id,
-        username: currentUser.username,
-        avatar: currentUser.avatar || currentUser.username.charAt(0).toUpperCase(),
-        text: reviewText,
-        rating: rating,
-        date: new Date().toISOString()
-      };
-      
-      setReviews(prev => {
-        const bookReviews = prev[bookId] || [];
-        return { ...prev, [bookId]: [...bookReviews, review] };
-      });
-      
-      alert("Review added!");
-    }
-  };
-
-  // Reset review when opening book modal
-  useEffect(() => {
-    if (activeModal === "book" && modalData.book) {
-      setNewReview({ text: "", rating: 5 });
-    }
-  }, [activeModal, modalData.book]);
-
-  // Authentication
-  const handleLogin = async (email, password, captchaAnswer) => {
-    try {
-      if (Number(captchaAnswer) !== captcha.answer) {
-        throw new Error("Incorrect captcha answer. Please try again.");
+    this.setState({ 
+      showReviewModal: true,
+      activeBook: book,
+      reviewData: {
+        rating: 0,
+        title: '',
+        content: '',
+        memeReview: ''
       }
-      
-      const users = JSON.parse(localStorage.getItem(STORAGE.USERS) || "[]");
-      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      
-      if (!user) throw new Error("No account found with this email.");
-      
-      const passwordHash = await hashPassword(password);
-      if (user.passwordHash !== passwordHash) throw new Error("Incorrect password.");
-      
-      setCurrentUser({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar
-      });
-      
-      setActiveModal(null);
-      alert(`Welcome back, ${user.username}!`);
-      setCaptcha(generateCaptcha());
-    } catch (error) {
-      alert(error.message);
-      setCaptcha(generateCaptcha());
-    }
-  };
+    });
+  }
 
-  const handleRegister = async (userData) => {
-    try {
-      if (Number(userData.captchaAnswer) !== captcha.answer) {
-        throw new Error("Incorrect captcha answer.");
+  hideReviewModal = () => {
+    this.setState({ 
+      showReviewModal: false,
+      activeBook: null
+    });
+  }
+
+  handleReviewInputChange = (field, value) => {
+    this.setState(prevState => ({
+      reviewData: {
+        ...prevState.reviewData,
+        [field]: value
       }
-      
-      const users = JSON.parse(localStorage.getItem(STORAGE.USERS) || "[]");
-      if (users.some(u => u.email.toLowerCase() === userData.email.toLowerCase())) {
-        throw new Error("This email is already registered.");
+    }));
+  }
+
+  setRating = (rating) => {
+    this.setState(prevState => ({
+      reviewData: {
+        ...prevState.reviewData,
+        rating: rating
       }
-      
-      const passwordHash = await hashPassword(userData.password);
-      const newUser = {
-        id: generateId(),
-        username: userData.username || userData.email.split("@")[0],
-        email: userData.email,
-        passwordHash,
-        role: "user",
-        avatar: userData.username?.charAt(0).toUpperCase() || userData.email.charAt(0).toUpperCase(),
-        createdAt: new Date().toISOString()
-      };
-      
-      localStorage.setItem(STORAGE.USERS, JSON.stringify([...users, newUser]));
-      setCurrentUser({
-        id: newUser.id,
-        username: newUser.username,
-        email: newUser.email,
-        role: newUser.role,
-        avatar: newUser.avatar
-      });
-      
-      setActiveModal(null);
-      alert("Account created successfully! Welcome to BookHub!");
-      setCaptcha(generateCaptcha());
-    } catch (error) {
-      alert(error.message);
-      setCaptcha(generateCaptcha());
+    }));
+  }
+
+  submitReview = (e) => {
+    e.preventDefault();
+    const { currentUser, activeBook, reviewData, userReviews } = this.state;
+    
+    if (!currentUser) {
+      this.showToast('Please login to submit a review', 'error');
+      return;
     }
-  };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    alert("You have been logged out successfully.");
-  };
+    if (!activeBook) {
+      this.showToast('No book selected for review', 'error');
+      return;
+    }
 
-  // Admin Functions
-  const exportData = () => {
-    const data = {
-      library,
-      reviews,
-      users: JSON.parse(localStorage.getItem(STORAGE.USERS) || "[]"),
-      exportedAt: new Date().toISOString(),
-      app: "BookHub White Theme"
+    if (reviewData.rating === 0) {
+      this.showToast('Please select a rating', 'error');
+      return;
+    }
+
+    if (!reviewData.title.trim() || !reviewData.content.trim()) {
+      this.showToast('Please fill in title and review content', 'error');
+      return;
+    }
+
+    const existingReview = userReviews.find(review => 
+      review.userId === currentUser.id && review.bookId === activeBook.id
+    );
+
+    if (existingReview) {
+      this.showToast('You have already reviewed this book', 'warning');
+      return;
+    }
+
+    const newReview = {
+      id: 'review_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      bookId: activeBook.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userAvatar: currentUser.avatar,
+      rating: reviewData.rating,
+      title: this.sanitizeInput(reviewData.title),
+      content: this.sanitizeInput(reviewData.content),
+      memeReview: this.sanitizeInput(reviewData.memeReview) || 'This book gave me all the feels! 📚✨',
+      date: new Date().toISOString().split('T')[0],
+      likes: 0,
+      likedBy: []
     };
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bookhub_export_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    alert("Data exported successfully!");
-  };
 
-  const clearReviews = () => {
-    if (window.confirm("Clear all reviews? This action cannot be undone.")) {
-      setReviews({});
-      alert("All reviews have been cleared.");
+    const newUserReviews = [...userReviews, newReview];
+    this.setState({ 
+      userReviews: newUserReviews,
+      showReviewModal: false,
+      reviewData: { rating: 0, title: '', content: '', memeReview: '' }
+    });
+
+    localStorage.setItem('user_reviews', JSON.stringify(newUserReviews));
+    this.showToast('Review submitted successfully! 💫', 'success');
+  }
+
+  likeReview = (reviewId) => {
+    const { userReviews, currentUser } = this.state;
+    
+    if (!currentUser) {
+      this.showToast('Please login to like reviews', 'warning');
+      return;
     }
-  };
 
-  // Stats
-  const stats = {
-    totalBooks: library.length,
-    totalReviews: Object.values(reviews).reduce((sum, bookReviews) => sum + bookReviews.length, 0),
-    totalPages: library.reduce((sum, book) => sum + (book.pages || 0), 0),
-    readingTime: Math.ceil(library.reduce((sum, book) => sum + (book.pages || 0), 0) / 250)
-  };
-
-  // Modal Components
-  const LoginModal = () => (
-    <div className="modal">
-      <div className="modal-header">
-        <h2 className="modal-title">Welcome Back</h2>
-        <button className="close-btn" onClick={() => setActiveModal(null)}>×</button>
-      </div>
-      
-      <form onSubmit={(e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        handleLogin(
-          formData.get("email"),
-          formData.get("password"),
-          formData.get("captcha")
-        );
-      }}>
-        <div className="form-group">
-          <label className="form-label">Email Address</label>
-          <input type="email" name="email" className="form-input" placeholder="you@example.com" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Password</label>
-          <input type="password" name="password" className="form-input" placeholder="••••••••" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Security Check: {captcha.question}</label>
-          <input type="number" name="captcha" className="form-input" placeholder="Enter the answer" required />
-        </div>
-        
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">Sign In</button>
-          <button type="button" className="btn btn-secondary" onClick={() => setActiveModal("register")}>
-            Create Account
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-
-  const RegisterModal = () => (
-    <div className="modal">
-      <div className="modal-header">
-        <h2 className="modal-title">Join BookHub</h2>
-        <button className="close-btn" onClick={() => setActiveModal(null)}>×</button>
-      </div>
-      
-      <form onSubmit={(e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const password = formData.get("password");
-        const confirmPassword = formData.get("confirmPassword");
-        
-        if (password !== confirmPassword) {
-          alert("Passwords don't match!");
-          return;
+    const updatedReviews = userReviews.map(review => {
+      if (review.id === reviewId) {
+        if (!review.likedBy) {
+          review.likedBy = [];
         }
         
-        handleRegister({
-          username: formData.get("username"),
-          email: formData.get("email"),
-          password: password,
-          captchaAnswer: formData.get("captcha")
-        });
-      }}>
-        <div className="form-group">
-          <label className="form-label">Full Name</label>
-          <input type="text" name="username" className="form-input" placeholder="John Doe" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Email Address</label>
-          <input type="email" name="email" className="form-input" placeholder="you@example.com" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Password</label>
-          <input type="password" name="password" className="form-input" placeholder="••••••••" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Confirm Password</label>
-          <input type="password" name="confirmPassword" className="form-input" placeholder="••••••••" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Security Check: {captcha.question}</label>
-          <input type="number" name="captcha" className="form-input" placeholder="Enter the answer" required />
-        </div>
-        
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">Create Account</button>
-          <button type="button" className="btn btn-secondary" onClick={() => setActiveModal("login")}>
-            Already have an account?
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+        if (review.likedBy.includes(currentUser.id)) {
+          return {
+            ...review,
+            likes: review.likes - 1,
+            likedBy: review.likedBy.filter(id => id !== currentUser.id)
+          };
+        } else {
+          return {
+            ...review,
+            likes: review.likes + 1,
+            likedBy: [...review.likedBy, currentUser.id]
+          };
+        }
+      }
+      return review;
+    });
 
-  const AddBookModal = () => (
-    <div className="modal">
-      <div className="modal-header">
-        <h2 className="modal-title">Add a New Book</h2>
-        <button className="close-btn" onClick={() => setActiveModal(null)}>×</button>
+    this.setState({ userReviews: updatedReviews });
+    localStorage.setItem('user_reviews', JSON.stringify(updatedReviews));
+  }
+
+  // Input Handlers
+  handleInputChange = (form, field, value) => {
+    this.setState(prevState => ({
+      [form]: {
+        ...prevState[form],
+        [field]: value
+      }
+    }));
+  }
+
+  // Toast Notifications
+  showToast = (message, type = 'success') => {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <div class="flex items-center justify-between">
+        <span>${message}</span>
+        <button class="ml-4 text-white hover:text-gray-200">
+          <i class="fas fa-times"></i>
+        </button>
       </div>
-      
-      <form onSubmit={(e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        addCustomBook({
-          title: formData.get("title"),
-          authors: formData.get("authors").split(",").map(a => a.trim()),
-          description: formData.get("description"),
-          thumbnail: formData.get("thumbnail") || "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=600&fit=crop"
-        });
-      }}>
-        <div className="form-group">
-          <label className="form-label">Book Title *</label>
-          <input type="text" name="title" className="form-input" placeholder="Enter book title" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Authors *</label>
-          <input type="text" name="authors" className="form-input" placeholder="Comma separated names" required />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Description</label>
-          <textarea name="description" className="form-input" rows="4" placeholder="Describe the book..." />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Cover Image URL</label>
-          <input type="url" name="thumbnail" className="form-input" placeholder="https://example.com/cover.jpg" />
-        </div>
-        
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">Add to Library</button>
-          <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-
-  const BookModal = ({ book }) => {
-    const bookReviews = reviews[book.id] || [];
+    `;
     
+    const container = document.getElementById('toast-container');
+    if (container) {
+      container.appendChild(toast);
+      
+      setTimeout(() => toast.classList.add('show'), 100);
+      
+      toast.querySelector('button').addEventListener('click', () => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      });
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+  }
+
+  // Book Management
+  loadSampleData = () => {
+    const { userLibrary, userReviews } = this.state;
+    
+    // REMOVED: The Great Gatsby sample book
+    
+    if (userReviews.length === 0) {
+      const allReviews = [...this.sampleReviews];
+      this.setState({ userReviews: allReviews });
+      localStorage.setItem('user_reviews', JSON.stringify(allReviews));
+    }
+  }
+
+  addBookToLibrary = (book) => {
+    const { currentUser, userLibrary } = this.state;
+    
+    if (!currentUser) {
+      this.showToast('Please login to add books to your library', 'warning');
+      this.showLoginModal();
+      return;
+    }
+    
+    if (!userLibrary.find(b => b.id === book.id)) {
+      const bookToAdd = {
+        ...book,
+        currentPage: 0,
+        status: 'to-read',
+        addedDate: new Date().toISOString(),
+        progressPercentage: 0
+      };
+      
+      const newLibrary = [...userLibrary, bookToAdd];
+      this.setState({ userLibrary: newLibrary });
+      localStorage.setItem('user_library', JSON.stringify(newLibrary));
+      this.showToast(`Added "${book.title}" to your library! 📚`, 'success');
+    } else {
+      this.showToast('Book is already in your library', 'warning');
+    }
+  }
+
+  // PDF Preview Handler
+  handlePDFPreview = (pdfUrl, language = 'English') => {
+    if (pdfUrl) {
+      window.open(pdfUrl, '_blank');
+      this.showToast(`Opening ${language} PDF preview...`, 'info');
+    } else {
+      this.showToast('PDF not available for this book', 'warning');
+    }
+  }
+
+  // Enhanced Search Functionality
+  handleEnhancedSearch = async (searchTerm) => {
+    if (!searchTerm.trim()) {
+      this.setState({ showSearchResults: false });
+      return;
+    }
+    
+    this.showToast(`Searching for "${searchTerm}"...`, 'warning');
+    
+    try {
+      const response = await fetch(
+        `${this.API_CONFIG.GOOGLE_BOOKS.BASE_URL}?q=${encodeURIComponent(searchTerm)}&key=${this.API_CONFIG.GOOGLE_BOOKS.API_KEY}&maxResults=12`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch books from Google Books API');
+      }
+      
+      const data = await response.json();
+      
+      if (data.items && data.items.length > 0) {
+        const searchResults = data.items.map(item => {
+          const bookInfo = item.volumeInfo;
+          return {
+            id: 'google_' + item.id,
+            title: bookInfo.title || 'Unknown Title',
+            author: bookInfo.authors ? bookInfo.authors.join(', ') : 'Unknown Author',
+            cover: bookInfo.imageLinks?.thumbnail || bookInfo.imageLinks?.smallThumbnail || 'https://via.placeholder.com/150x200/666666/ffffff?text=No+Cover',
+            pages: bookInfo.pageCount || 0,
+            genre: bookInfo.categories ? bookInfo.categories[0] : 'Unknown Genre',
+            description: bookInfo.description || 'No description available',
+            contentPreview: bookInfo.previewLink ? 'Preview available' : 'No preview available',
+            rating: bookInfo.averageRating || 0,
+            reviews: bookInfo.ratingsCount || 0,
+            publishedYear: bookInfo.publishedDate ? bookInfo.publishedDate.split('-')[0] : 'Unknown',
+            language: bookInfo.language || 'en',
+            googleBooksId: item.id,
+            previewLink: bookInfo.previewLink,
+            infoLink: bookInfo.infoLink,
+            isGoogleBook: true
+          };
+        });
+        
+        this.setState({ 
+          searchResults: searchResults,
+          showSearchResults: true,
+          activeGenre: 'search'
+        });
+        
+        this.showToast(`Found ${searchResults.length} books matching "${searchTerm}"`, 'success');
+      } else {
+        this.showToast(`No books found for "${searchTerm}"`, 'error');
+        this.setState({ showSearchResults: false });
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      this.showToast('Search failed. Please try again.', 'error');
+      this.setState({ showSearchResults: false });
+    }
+  }
+
+  // Clear search results
+  clearSearchResults = () => {
+    this.setState({ 
+      showSearchResults: false,
+      searchResults: [],
+      activeGenre: 'all'
+    });
+  }
+
+  // Book Details Modal
+  showBookDetails = async (bookId) => {
+    try {
+      this.setState({ showBookModal: true, activeBook: null });
+      
+      let bookData;
+      
+      if (bookId.startsWith('google_')) {
+        bookData = await this.fetchBookFromGoogleAPI(bookId.replace('google_', ''));
+      } else {
+        bookData = this.sampleBooks.find(b => b.id === bookId) || 
+                  this.state.userLibrary.find(b => b.id === bookId) ||
+                  this.state.searchResults.find(b => b.id === bookId);
+      }
+      
+      if (bookData) {
+        this.setState({ activeBook: bookData });
+      } else {
+        throw new Error('Book not found');
+      }
+    } catch (error) {
+      console.error('Error loading book details:', error);
+      this.showToast('Could not load book details', 'error');
+      this.hideBookModal();
+    }
+  }
+
+  fetchBookFromGoogleAPI = async (bookId) => {
+    try {
+      const response = await fetch(
+        `${this.API_CONFIG.GOOGLE_BOOKS.BASE_URL}/${bookId}?key=${this.API_CONFIG.GOOGLE_BOOKS.API_KEY}`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch book details from Google Books API');
+      }
+      
+      const data = await response.json();
+      const bookInfo = data.volumeInfo;
+      
+      return {
+        id: 'google_' + data.id,
+        title: bookInfo.title,
+        author: bookInfo.authors ? bookInfo.authors.join(', ') : 'Unknown Author',
+        cover: bookInfo.imageLinks?.thumbnail || bookInfo.imageLinks?.smallThumbnail || 'https://via.placeholder.com/150x200',
+        pages: bookInfo.pageCount || 0,
+        genre: bookInfo.categories ? bookInfo.categories[0] : 'Unknown Genre',
+        description: bookInfo.description || 'No description available',
+        contentPreview: bookInfo.previewLink ? 'Preview available' : 'No preview available',
+        rating: bookInfo.averageRating || 0,
+        reviews: bookInfo.ratingsCount || 0,
+        publishedDate: bookInfo.publishedDate,
+        publisher: bookInfo.publisher,
+        isbn: bookInfo.industryIdentifiers?.[0]?.identifier || 'N/A',
+        language: bookInfo.language || 'en',
+        isGoogleBook: true
+      };
+    } catch (error) {
+      console.error('Google Books API Error:', error);
+      this.showToast('Could not fetch book details from Google Books', 'error');
+      throw error;
+    }
+  }
+
+  hideBookModal = () => {
+    this.setState({ showBookModal: false, activeBook: null });
+  }
+
+  // Theme Management
+  initializeTheme = () => {
+    const savedTheme = localStorage.getItem('bookhub_theme') || 'dark';
+    this.applyTheme(savedTheme);
+  }
+
+  applyTheme = (theme) => {
+    if (theme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    
+    document.documentElement.classList.remove('dark', 'light');
+    document.documentElement.classList.add(theme);
+    document.body.className = theme === 'dark' ? 
+      'bg-dark text-light min-h-screen relative overflow-x-hidden dark' : 
+      'bg-light text-dark min-h-screen relative overflow-x-hidden light';
+    
+    localStorage.setItem('bookhub_theme', theme);
+  }
+
+  toggleTheme = () => {
+    const currentTheme = localStorage.getItem('bookhub_theme') || 'dark';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    this.applyTheme(newTheme);
+  }
+
+  // Render Stars Method
+  renderStars = (rating, interactive = false, onStarClick = null) => {
     return (
-      <div className="modal">
-        <div className="modal-header">
-          <div>
-            <h2 className="modal-title">{book.title}</h2>
-            <p style={{ color: "var(--text-secondary)", marginTop: "4px" }}>
-              by {book.authors.join(", ")}
-            </p>
-          </div>
-          <button className="close-btn" onClick={() => setActiveModal(null)}>×</button>
-        </div>
-        
-        <div style={{ marginBottom: "32px" }}>
-          <img 
-            src={book.thumbnail} 
-            alt={book.title} 
-            style={{ 
-              width: "100%", 
-              height: "300px", 
-              objectFit: "cover", 
-              borderRadius: "var(--radius-lg)",
-              marginBottom: "24px"
-            }} 
+      <div className="star-rating">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <i
+            key={star}
+            className={
+              star <= rating
+                ? "fas fa-star text-yellow-400"
+                : star - 0.5 <= rating
+                ? "fas fa-star-half-alt text-yellow-400"
+                : "far fa-star text-yellow-400"
+            }
+            style={interactive ? { cursor: 'pointer' } : {}}
+            onClick={interactive ? () => onStarClick(star) : undefined}
           />
-          
-          <div style={{ display: "flex", gap: "24px", marginBottom: "24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span className="star">★</span>
-              <span style={{ fontWeight: "600" }}>{book.rating || "4.0"}</span>
+        ))}
+      </div>
+    );
+  }
+
+  // NEW: Render Progress Modal
+  renderProgressModal = () => {
+    const { showProgressModal, activeBook, progressData } = this.state;
+
+    if (!showProgressModal || !activeBook) return null;
+
+    const progressPercentage = progressData.currentPage > 0 ? 
+      Math.min(100, Math.round((progressData.currentPage / activeBook.pages) * 100)) : 0;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in-up p-4">
+        <div className="bg-card rounded-xl p-6 max-w-md w-full mx-auto card-hover relative">
+          <button 
+            onClick={this.hideProgressModal}
+            className="absolute top-3 right-3 text-secondary hover:text-primary-400 transition-colors duration-300 text-lg"
+          >
+            <i className="fas fa-times"></i>
+          </button>
+
+          <h3 className="text-xl font-semibold mb-2 text-center">Update Reading Progress</h3>
+          <p className="text-center text-secondary text-sm mb-4">for "{activeBook.title}"</p>
+
+          <form onSubmit={this.updateBookProgress} className="space-y-4">
+            {/* Status Selection */}
+            <div>
+              <label className="block text-sm font-semibold mb-2">Reading Status</label>
+              <select 
+                value={progressData.status}
+                onChange={(e) => this.handleProgressInputChange('status', e.target.value)}
+                className="w-full px-3 py-2 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 transition-all duration-300 text-sm"
+              >
+                <option value="to-read">To Read</option>
+                <option value="reading">Currently Reading</option>
+                <option value="completed">Completed</option>
+              </select>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ color: "var(--text-muted)" }}>📖</span>
-              <span>{book.pages || 250} pages</span>
+
+            {/* Current Page Input */}
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Current Page (Total: {activeBook.pages})
+              </label>
+              <input 
+                type="number" 
+                min="0"
+                max={activeBook.pages}
+                value={progressData.currentPage}
+                onChange={(e) => this.handleProgressInputChange('currentPage', e.target.value)}
+                className="w-full px-3 py-2 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 transition-all duration-300 text-sm" 
+                placeholder={`Enter current page (0-${activeBook.pages})`}
+              />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ color: "var(--text-muted)" }}>📅</span>
-              <span>{book.published || "2023"}</span>
+
+            {/* Progress Display */}
+            {progressData.currentPage > 0 && (
+              <div className="bg-dark rounded-lg p-3">
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-secondary">Progress</span>
+                  <span className="text-sm font-semibold text-primary-400">{progressPercentage}%</span>
+                </div>
+                <div className="w-full bg-gray-600 rounded-full h-2">
+                  <div 
+                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${progressPercentage}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-secondary mt-1">
+                  {progressData.currentPage} / {activeBook.pages} pages
+                </p>
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <div className="flex gap-3 pt-2">
+              <button 
+                type="button"
+                onClick={this.hideProgressModal}
+                className="flex-1 py-2 border border-secondary text-secondary font-semibold rounded-lg hover:bg-secondary hover:text-white transition-all duration-300 text-sm"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                className="flex-1 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-all duration-300 text-sm"
+              >
+                Update Progress
+              </button>
             </div>
-          </div>
-          
-          <p style={{ fontSize: "16px", lineHeight: "1.7", color: "var(--text-secondary)" }}>
-            {book.description}
-          </p>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  renderBookDetailsModal = () => {
+    const { activeBook, currentUser, userReviews } = this.state;
+    
+    if (!activeBook) {
+      return (
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      );
+    }
+
+    const bookReviews = userReviews.filter(review => review.bookId === activeBook.id);
+    const userHasReviewed = currentUser && bookReviews.some(review => review.userId === currentUser.id);
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-1 flex justify-center">
+          <img src={activeBook.cover} alt={activeBook.title} className="book-cover w-full max-w-xs rounded-lg shadow-lg" />
         </div>
         
-        {/* Reviews Section - FIXED */}
-        <div className="reviews-section">
-          <h3 className="section-title">
-            <span>💬</span>
-            Reviews ({bookReviews.length})
-          </h3>
+        <div className="lg:col-span-2">
+          <h2 className="text-3xl font-bold text-primary-400 mb-2">{activeBook.title}</h2>
+          <p className="text-xl text-secondary mb-4">by {activeBook.author}</p>
           
-          {bookReviews.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">💬</div>
-              <h4 className="empty-title">No Reviews Yet</h4>
-              <p className="empty-description">Be the first to share your thoughts about this book!</p>
+          <div className="flex items-center mb-6">
+            {this.renderStars(activeBook.rating)}
+            <span className="ml-3 text-lg font-semibold">{activeBook.rating}/5</span>
+            <span className="ml-2 text-secondary">({activeBook.reviews} reviews)</span>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-card rounded-lg p-4">
+              <div className="text-sm text-secondary">Pages</div>
+              <div className="font-semibold">{activeBook.pages}</div>
             </div>
-          ) : (
-            <div>
-              {bookReviews.map((review) => (
-                <div key={review.id} className="review-item">
-                  <div className="review-header">
-                    <div className="review-user">
-                      <div className="user-avatar" style={{ background: book.color }}>
-                        {review.avatar}
-                      </div>
-                      <div className="user-info">
-                        <h4>{review.username}</h4>
-                        <span>Reviewed on {new Date(review.date).toLocaleDateString()}</span>
+            <div className="bg-card rounded-lg p-4">
+              <div className="text-sm text-secondary">Genre</div>
+              <div className="font-semibold">{activeBook.genre}</div>
+            </div>
+            {activeBook.publishedYear && (
+              <div className="bg-card rounded-lg p-4">
+                <div className="text-sm text-secondary">Published</div>
+                <div className="font-semibold">{activeBook.publishedYear}</div>
+              </div>
+            )}
+            {activeBook.language && (
+              <div className="bg-card rounded-lg p-4">
+                <div className="text-sm text-secondary">Language</div>
+                <div className="font-semibold">{activeBook.language}</div>
+              </div>
+            )}
+          </div>
+          
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold mb-3">About this book</h3>
+            <p className="text-secondary leading-relaxed">{activeBook.description}</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-4 mb-8">
+            <button 
+              onClick={() => this.addBookToLibrary(activeBook)}
+              className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors duration-300 flex items-center gap-2"
+            >
+              <i className="fas fa-plus"></i>
+              Add to Library
+            </button>
+            
+            {activeBook.pdfUrl && (
+              <button 
+                onClick={() => this.handlePDFPreview(activeBook.pdfUrl, 'English')}
+                className="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors duration-300 flex items-center gap-2"
+              >
+                <i className="fas fa-file-pdf"></i>
+                Read English PDF
+              </button>
+            )}
+            
+            {activeBook.hindiPdfUrl && (
+              <button 
+                onClick={() => this.handlePDFPreview(activeBook.hindiPdfUrl, 'Hindi')}
+                className="px-6 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-colors duration-300 flex items-center gap-2"
+              >
+                <i className="fas fa-file-pdf"></i>
+                Read Hindi PDF
+              </button>
+            )}
+            
+            {activeBook.previewLink && activeBook.isGoogleBook && (
+              <button 
+                onClick={() => window.open(activeBook.previewLink, '_blank')}
+                className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-300 flex items-center gap-2"
+              >
+                <i className="fas fa-external-link-alt"></i>
+                Google Preview
+              </button>
+            )}
+            
+            <button 
+              onClick={() => this.showReviewModal(activeBook)}
+              className={`px-6 py-3 border font-semibold rounded-lg transition-all duration-300 flex items-center gap-2 ${
+                userHasReviewed 
+                  ? 'border-gray-500 text-gray-500 cursor-not-allowed' 
+                  : 'border-accent text-accent hover:bg-accent hover:text-white'
+              }`}
+              disabled={userHasReviewed}
+            >
+              <i className="fas fa-pen"></i>
+              {userHasReviewed ? 'Review Submitted' : 'Write Review'}
+            </button>
+          </div>
+
+          {/* Reviews Section in Book Details */}
+          <div className="mt-8">
+            <h3 className="text-2xl font-semibold mb-4 text-primary-400">Reader Reviews</h3>
+            {bookReviews.length > 0 ? (
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {bookReviews.map(review => (
+                  <div key={review.id} className="bg-card rounded-xl p-4">
+                    <div className="flex items-start space-x-3 mb-3">
+                      <img src={review.userAvatar} alt={review.userName} className="h-10 w-10 rounded-full" />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-semibold text-primary-400">{review.userName}</h4>
+                            <div className="flex items-center mt-1">
+                              {this.renderStars(review.rating)}
+                            </div>
+                          </div>
+                          <div className="text-sm text-secondary">{review.date}</div>
+                        </div>
                       </div>
                     </div>
-                    <div className="review-rating">
-                      {[...Array(5)].map((_, i) => (
-                        <span key={i} className="star" style={{ color: i < review.rating ? "#fbbf24" : "#e2e8f0" }}>
-                          ★
-                        </span>
-                      ))}
+                    <h5 className="font-semibold text-lg mb-2">{review.title}</h5>
+                    <p className="text-secondary mb-3">{review.content}</p>
+                    {review.memeReview && (
+                      <div className="meme-review bg-dark rounded-lg p-3">
+                        <p className="text-sm font-medium text-accent">💡 Vibe Check:</p>
+                        <p className="text-sm">{review.memeReview}</p>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center mt-3">
+                      <button 
+                        onClick={() => this.likeReview(review.id)}
+                        className={`reaction-btn flex items-center gap-1 transition-colors duration-300 ${
+                          review.likedBy && review.likedBy.includes(this.state.currentUser?.id)
+                            ? 'text-red-500'
+                            : 'text-secondary hover:text-red-500'
+                        }`}
+                      >
+                        <i className="fas fa-heart"></i> 
+                        <span>{review.likes}</span>
+                      </button>
+                      <button className="text-secondary hover:text-primary-400 transition-colors duration-300">
+                        <i className="fas fa-share"></i>
+                      </button>
                     </div>
                   </div>
-                  <p className="review-text">{review.text}</p>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {/* Add Review Form - FIXED */}
-          <div className="add-review-form">
-            <h4>Share Your Thoughts</h4>
-            <textarea
-              className="review-input"
-              placeholder="What did you think of this book? Share your review..."
-              value={newReview.text}
-              onChange={(e) => setNewReview({ ...newReview, text: e.target.value })}
-              rows="4"
-            />
-            
-            <div className="review-actions">
-              <div className="rating-selector">
-                <span>Rating:</span>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    className="star-btn"
-                    style={{ 
-                      background: "none", 
-                      border: "none", 
-                      fontSize: "24px", 
-                      cursor: "pointer",
-                      color: star <= newReview.rating ? "#fbbf24" : "#e2e8f0",
-                      padding: "0 4px"
-                    }}
-                    onClick={() => setNewReview({ ...newReview, rating: star })}
-                  >
-                    ★
-                  </button>
                 ))}
               </div>
+            ) : (
+              <div className="text-center py-8 bg-card rounded-xl">
+                <i className="fas fa-comment-slash text-4xl text-secondary mb-3"></i>
+                <p className="text-secondary">No reviews yet. Be the first to review this book!</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  renderDiscoverBooks = () => {
+    const { activeGenre, currentUser, userReviews } = this.state;
+    const filteredBooks = activeGenre === 'all' 
+      ? this.sampleBooks 
+      : this.sampleBooks.filter(book => book.genre === activeGenre);
+
+    return filteredBooks.map(book => {
+      const bookReviews = userReviews.filter(review => review.bookId === book.id);
+      const userHasReviewed = currentUser && bookReviews.some(review => review.userId === currentUser.id);
+
+      return (
+        <div key={book.id} className="bg-dark rounded-2xl p-6 card-hover">
+          <div className="flex flex-col items-center text-center">
+            <img src={book.cover} alt={book.title} className="book-cover mb-4 rounded-lg shadow-md" />
+            <h3 className="text-xl font-semibold text-primary-400 mb-1">{book.title}</h3>
+            <p className="text-secondary mb-2">by {book.author}</p>
+            <div className="flex items-center mb-3">
+              <span className="px-2 py-1 bg-card text-xs rounded-full text-secondary">{book.genre}</span>
+              {userHasReviewed && (
+                <span className="px-2 py-1 bg-green-600 text-xs rounded-full text-white ml-2">Reviewed</span>
+              )}
+            </div>
+            <div className="flex items-center mb-3">
+              {this.renderStars(book.rating)}
+              <span className="ml-2 text-sm text-secondary">{book.rating}</span>
+            </div>
+            <p className="text-sm text-secondary mb-4 line-clamp-3">{book.description}</p>
+            <div className="flex space-x-2 w-full">
+              <button 
+                onClick={() => this.addBookToLibrary(book)}
+                className="add-to-library-btn flex-1 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors duration-300"
+              >
+                Add to Library
+              </button>
+              <button 
+                onClick={() => this.showBookDetails(book.id)}
+                className="view-details-btn flex-1 py-2 border border-accent text-accent text-sm rounded-lg hover:bg-accent hover:text-white transition-all duration-300"
+              >
+                Details
+              </button>
+            </div>
+            <button 
+              onClick={() => this.showReviewModal(book)}
+              className={`w-full mt-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                userHasReviewed 
+                  ? 'bg-green-600 text-white cursor-default' 
+                  : 'bg-card text-secondary hover:bg-primary-600 hover:text-white'
+              }`}
+            >
+              <i className="fas fa-pen"></i>
+              {userHasReviewed ? 'Review Submitted ✓' : 'Write Review'}
+            </button>
+          </div>
+        </div>
+      );
+    });
+  }
+
+  // Render Search Results
+  renderSearchResults = () => {
+    const { searchResults, currentUser, userReviews } = this.state;
+    
+    if (searchResults.length === 0) {
+      return (
+        <div className="col-span-full text-center py-12">
+          <i className="fas fa-search text-6xl text-secondary mb-4"></i>
+          <h3 className="text-xl font-semibold text-secondary mb-2">No books found</h3>
+          <p className="text-secondary">Try searching with different keywords</p>
+        </div>
+      );
+    }
+
+    return searchResults.map(book => {
+      const bookReviews = userReviews.filter(review => review.bookId === book.id);
+      const userHasReviewed = currentUser && bookReviews.some(review => review.userId === currentUser.id);
+
+      return (
+        <div key={book.id} className="bg-dark rounded-2xl p-6 card-hover">
+          <div className="flex flex-col items-center text-center">
+            <img src={book.cover} alt={book.title} className="book-cover mb-4 rounded-lg shadow-md" />
+            <h3 className="text-xl font-semibold text-primary-400 mb-1">{book.title}</h3>
+            <p className="text-secondary mb-2">by {book.author}</p>
+            <div className="flex items-center mb-3">
+              <span className="px-2 py-1 bg-card text-xs rounded-full text-secondary">{book.genre}</span>
+              {book.isGoogleBook && (
+                <span className="px-2 py-1 bg-blue-600 text-xs rounded-full text-white ml-2">Google Books</span>
+              )}
+              {userHasReviewed && (
+                <span className="px-2 py-1 bg-green-600 text-xs rounded-full text-white ml-2">Reviewed</span>
+              )}
+            </div>
+            <div className="flex items-center mb-3">
+              {this.renderStars(book.rating)}
+              <span className="ml-2 text-sm text-secondary">{book.rating}</span>
+            </div>
+            <p className="text-sm text-secondary mb-4 line-clamp-3">{book.description}</p>
+            <div className="flex space-x-2 w-full">
+              <button 
+                onClick={() => this.addBookToLibrary(book)}
+                className="add-to-library-btn flex-1 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors duration-300"
+              >
+                Add to Library
+              </button>
+              <button 
+                onClick={() => this.showBookDetails(book.id)}
+                className="view-details-btn flex-1 py-2 border border-accent text-accent text-sm rounded-lg hover:bg-accent hover:text-white transition-all duration-300"
+              >
+                Details
+              </button>
+            </div>
+            <button 
+              onClick={() => this.showReviewModal(book)}
+              className={`w-full mt-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                userHasReviewed 
+                  ? 'bg-green-600 text-white cursor-default' 
+                  : 'bg-card text-secondary hover:bg-primary-600 hover:text-white'
+              }`}
+            >
+              <i className="fas fa-pen"></i>
+              {userHasReviewed ? 'Review Submitted ✓' : 'Write Review'}
+            </button>
+          </div>
+        </div>
+      );
+    });
+  }
+
+  renderTrendingBooks = () => {
+    const trendingBooks = this.sampleBooks.filter(book => book.trending);
+    
+    return trendingBooks.map(book => (
+      <div key={book.id} className="bg-dark rounded-2xl p-6 card-hover relative">
+        <div className="absolute top-4 right-4 trending-badge">
+          Trending 
+        </div>
+        <div className="flex flex-col items-center text-center">
+          <img src={book.cover} alt={book.title} className="book-cover mb-4 rounded-lg shadow-md" />
+          <h3 className="text-xl font-semibold text-primary-400 mb-1">{book.title}</h3>
+          <p className="text-secondary mb-2">by {book.author}</p>
+          <div className="flex items-center mb-3">
+            {this.renderStars(book.rating)}
+            <span className="ml-2 text-sm text-secondary">{book.rating} ({book.reviews} reviews)</span>
+          </div>
+          <p className="text-sm text-secondary mb-4 line-clamp-2">{book.description}</p>
+          <div className="flex space-x-2 w-full">
+            <button 
+              onClick={() => this.addBookToLibrary(book)}
+              className="add-to-library-btn flex-1 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors duration-300"
+            >
+              Add to Library
+            </button>
+            <button 
+              onClick={() => this.showBookDetails(book.id)}
+              className="view-details-btn flex-1 py-2 border border-accent text-accent text-sm rounded-lg hover:bg-accent hover:text-white transition-all duration-300"
+            >
+              Details
+            </button>
+          </div>
+        </div>
+      </div>
+    ));
+  }
+
+  renderReviews = () => {
+    const { userReviews, currentUser } = this.state;
+    const allReviews = [...userReviews].reverse();
+
+    return allReviews.map(review => {
+      const book = this.sampleBooks.find(b => b.id === review.bookId) || 
+                  this.state.searchResults.find(b => b.id === review.bookId);
+
+      if (!book) return null;
+
+      return (
+        <div key={review.id} className="bg-dark rounded-2xl p-6 card-hover">
+          <div className="flex items-start space-x-4 mb-4">
+            <img src={review.userAvatar} alt={review.userName} className="h-12 w-12 rounded-full" />
+            <div className="flex-1">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="font-semibold text-primary-400">{review.userName}</h4>
+                  <p className="text-sm text-secondary">Reviewed "{book.title}"</p>
+                </div>
+                <div className="text-sm text-secondary">{review.date}</div>
+              </div>
+              <div className="flex items-center mt-2">
+                {this.renderStars(review.rating)}
+              </div>
+            </div>
+          </div>
+          <h5 className="font-semibold text-lg mb-2">{review.title}</h5>
+          <p className="text-secondary mb-4">{review.content}</p>
+          <div className="meme-review">
+            <p className="text-sm font-medium">💡 Vibe Check:</p>
+            <p className="text-sm">{review.memeReview}</p>
+          </div>
+          <div className="flex justify-between items-center mt-4">
+            <div className="flex space-x-4">
+              <button 
+                onClick={() => this.likeReview(review.id)}
+                className={`reaction-btn flex items-center gap-1 transition-colors duration-300 ${
+                  review.likedBy && review.likedBy.includes(currentUser?.id)
+                    ? 'text-red-500'
+                    : 'text-secondary hover:text-red-500'
+                }`}
+              >
+                <i className="fas fa-heart"></i> 
+                <span>{review.likes}</span>
+              </button>
+              <button className="reaction-btn text-secondary hover:text-primary-400 transition-colors duration-300">
+                <i className="fas fa-comment"></i> Reply
+              </button>
+            </div>
+            <button className="text-secondary hover:text-primary-400 transition-colors duration-300">
+              <i className="fas fa-share"></i>
+            </button>
+          </div>
+        </div>
+      );
+    });
+  }
+
+  // UPDATED: Render User Library with Filter and Sort
+  renderUserLibrary = () => {
+    const { currentUser, userReviews, libraryFilter, librarySort } = this.state;
+    
+    if (!currentUser) {
+      return (
+        <div className="col-span-full text-center py-12">
+          <i className="fas fa-lock text-6xl text-secondary mb-4"></i>
+          <h3 className="text-xl font-semibold text-secondary mb-2">Login to access your library</h3>
+          <p className="text-secondary">Sign in to view and manage your book collection</p>
+        </div>
+      );
+    }
+
+    const filteredSortedLibrary = this.getFilteredSortedLibrary();
+
+    if (filteredSortedLibrary.length === 0) {
+      return (
+        <div className="col-span-full text-center py-12">
+          <i className="fas fa-book-open text-6xl text-secondary mb-4"></i>
+          <h3 className="text-xl font-semibold text-secondary mb-2">Your library is empty</h3>
+          <p className="text-secondary">Add some books to get started!</p>
+        </div>
+      );
+    }
+
+    return filteredSortedLibrary.map(book => {
+      const bookReviews = userReviews.filter(review => review.bookId === book.id);
+      const userHasReviewed = currentUser && bookReviews.some(review => review.userId === currentUser.id);
+      const progressPercentage = book.progressPercentage || 
+        (book.currentPage > 0 ? Math.min(100, Math.round((book.currentPage / book.pages) * 100)) : 0);
+
+      return (
+        <div key={book.id} className="bg-dark rounded-2xl p-6 card-hover">
+          <div className="flex items-start space-x-4">
+            <img src={book.cover} alt={book.title} className="book-cover rounded-lg w-24 h-32 object-cover" />
+            <div className="flex-1">
+              <h3 className="text-xl font-semibold text-primary-400 mb-1">{book.title}</h3>
+              <p className="text-secondary mb-2">by {book.author}</p>
+              <div className="flex items-center mb-4">
+                <span className="px-2 py-1 bg-card text-xs rounded-full text-secondary">{book.genre}</span>
+                <span className={`px-2 py-1 text-xs rounded-full text-white ml-2 ${
+                  book.status === 'completed' ? 'bg-green-600' :
+                  book.status === 'reading' ? 'bg-blue-600' : 'bg-gray-600'
+                }`}>
+                  {book.status === 'completed' ? 'Completed' :
+                   book.status === 'reading' ? 'Reading' : 'To Read'}
+                </span>
+                {userHasReviewed && (
+                  <span className="px-2 py-1 bg-green-600 text-xs rounded-full text-white ml-2">Reviewed</span>
+                )}
+              </div>
               
-              <button
-                className="btn btn-primary"
-                onClick={() => submitReview(book.id)}
-                disabled={!newReview.text.trim()}
+              {/* Progress Section */}
+              <div className="mb-4">
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm text-secondary">Progress</span>
+                  <span className="text-sm font-semibold text-primary-400">{progressPercentage}%</span>
+                </div>
+                <div className="w-full bg-gray-600 rounded-full h-2">
+                  <div 
+                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${progressPercentage}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-secondary mt-1">
+                  {book.currentPage || 0} / {book.pages} pages
+                </p>
+              </div>
+              
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => this.showProgressModal(book)}
+                  className="update-progress-btn flex-1 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors duration-300"
+                >
+                  Update Progress
+                </button>
+                <button 
+                  onClick={() => this.showBookDetails(book.id)}
+                  className="view-details-btn flex-1 py-2 border border-accent text-accent text-sm rounded-lg hover:bg-accent hover:text-white transition-all duration-300"
+                >
+                  Details
+                </button>
+              </div>
+              <button 
+                onClick={() => this.showReviewModal(book)}
+                className={`w-full mt-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                  userHasReviewed 
+                    ? 'bg-green-600 text-white cursor-default' 
+                    : 'bg-card text-secondary hover:bg-primary-600 hover:text-white'
+                }`}
+              >
+                <i className="fas fa-pen"></i>
+                {userHasReviewed ? 'Review Submitted ✓' : 'Write Review'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    });
+  }
+
+  // Review Modal
+  renderReviewModal = () => {
+    const { showReviewModal, activeBook, reviewData, currentUser } = this.state;
+
+    if (!showReviewModal || !activeBook) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in-up p-4">
+        <div className="bg-card rounded-xl p-6 max-w-md w-full mx-auto card-hover relative max-h-[85vh] overflow-y-auto">
+          <button 
+            onClick={this.hideReviewModal}
+            className="absolute top-3 right-3 text-secondary hover:text-primary-400 transition-colors duration-300 text-lg"
+          >
+            <i className="fas fa-times"></i>
+          </button>
+
+          <h3 className="text-xl font-semibold mb-2 text-center">Write a Review</h3>
+          <p className="text-center text-secondary text-sm mb-4">for "{activeBook.title}"</p>
+
+          <form onSubmit={this.submitReview} className="space-y-4">
+            {/* Star Rating */}
+            <div className="text-center">
+              <label className="block text-sm font-semibold mb-2">Your Rating</label>
+              <div className="star-rating text-2xl mb-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <i
+                    key={star}
+                    className={
+                      star <= reviewData.rating
+                        ? "fas fa-star text-yellow-400 cursor-pointer"
+                        : "far fa-star text-yellow-400 cursor-pointer"
+                    }
+                    onClick={() => this.setRating(star)}
+                    style={{ margin: '0 2px' }}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-secondary">
+                {reviewData.rating === 0 ? 'Select your rating' : `${reviewData.rating} out of 5 stars`}
+              </p>
+            </div>
+
+            {/* Review Title */}
+            <div>
+              <label className="block text-sm font-semibold mb-1">Review Title</label>
+              <input 
+                type="text" 
+                value={reviewData.title}
+                onChange={(e) => this.handleReviewInputChange('title', e.target.value)}
+                required 
+                className="w-full px-3 py-2 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 transition-all duration-300 text-sm" 
+                placeholder="Give your review a title..." 
+                maxLength="60"
+              />
+            </div>
+
+            {/* Review Content */}
+            <div>
+              <label className="block text-sm font-semibold mb-1">Your Review</label>
+              <textarea 
+                value={reviewData.content}
+                onChange={(e) => this.handleReviewInputChange('content', e.target.value)}
+                required 
+                rows="3"
+                className="w-full px-3 py-2 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 transition-all duration-300 resize-none text-sm" 
+                placeholder="Share your thoughts about this book..."
+                maxLength="500"
+              />
+              <div className="text-right text-xs text-secondary mt-1">
+                {reviewData.content.length}/500 characters
+              </div>
+            </div>
+
+            {/* Meme Review (Optional) */}
+            <div>
+              <label className="block text-sm font-semibold mb-1">
+                Vibe Check (Optional)
+              </label>
+              <input 
+                type="text" 
+                value={reviewData.memeReview}
+                onChange={(e) => this.handleReviewInputChange('memeReview', e.target.value)}
+                className="w-full px-3 py-2 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 transition-all duration-300 text-sm" 
+                placeholder="Add a funny one-liner..."
+                maxLength="100"
+              />
+              <div className="text-right text-xs text-secondary mt-1">
+                {reviewData.memeReview.length}/100 characters
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="flex gap-3 pt-2">
+              <button 
+                type="button"
+                onClick={this.hideReviewModal}
+                className="flex-1 py-2 border border-secondary text-secondary font-semibold rounded-lg hover:bg-secondary hover:text-white transition-all duration-300 text-sm"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                className="flex-1 py-2 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-all duration-300 text-sm"
               >
                 Submit Review
               </button>
             </div>
-          </div>
-        </div>
-        
-        <div className="form-actions" style={{ marginTop: "32px" }}>
-          <button 
-            className="btn btn-secondary" 
-            onClick={() => addToLibrary(book)}
-          >
-            Add to Library
-          </button>
-          <button 
-            className="btn btn-outline" 
-            onClick={() => {
-              navigator.clipboard.writeText(book.title);
-              alert("Book title copied to clipboard!");
-            }}
-          >
-            Copy Title
-          </button>
+          </form>
         </div>
       </div>
     );
-  };
+  }
 
-  return (
-    <div className="app-container">
-      {/* Header */}
-      <header className="site-header">
-        <div className="brand">
-          <div className="logo">📚</div>
-          <div>
-            <div className="logo-text">BookHub</div>
-            <div className="tagline">Discover, Read, Review</div>
-          </div>
-        </div>
-        
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          {currentUser ? (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div 
-                  className="user-avatar" 
-                  style={{ 
-                    background: "linear-gradient(135deg, var(--accent-blue), var(--accent-purple))",
-                    width: "36px",
-                    height: "36px"
-                  }}
-                >
-                  {currentUser.avatar}
-                </div>
-                <div>
-                  <div style={{ fontSize: "14px", fontWeight: "600" }}>{currentUser.username}</div>
-                  <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                    {currentUser.role === "admin" ? "Administrator" : "Member"}
-                  </div>
-                </div>
-              </div>
-              <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
-                Logout
+  // Event Handlers
+  handleUserLogin = (e) => {
+    e.preventDefault();
+    const { loginData } = this.state;
+    
+    if (!loginData.username || !loginData.password) {
+      this.showToast('Please fill all fields', 'error');
+      return;
+    }
+    
+    const result = this.loginUser(loginData.username, loginData.password);
+    
+    if (result.success) {
+      this.showToast('Welcome back!', 'success');
+    } else {
+      this.showToast(result.message, 'error');
+    }
+  }
+
+  handleAdminLogin = (e) => {
+    e.preventDefault();
+    const { adminData } = this.state;
+    
+    if (!adminData.username || !adminData.password || !adminData.securityCode) {
+      this.showToast('Please fill all fields', 'error');
+      return;
+    }
+    
+    const result = this.loginAdmin(adminData.username, adminData.password, adminData.securityCode);
+    
+    if (result.success) {
+      this.showToast('Admin access granted!', 'success');
+    } else {
+      this.showToast(result.message, 'error');
+    }
+  }
+
+  handleRegistration = (e) => {
+    e.preventDefault();
+    const { registerData } = this.state;
+    
+    if (!registerData.name || !registerData.username || !registerData.email || !registerData.password || !registerData.confirmPassword) {
+      this.showToast('Please fill all fields', 'error');
+      return;
+    }
+    
+    const result = this.registerUser(registerData);
+    
+    if (result.success) {
+      this.showToast('Account created successfully!', 'success');
+    } else {
+      this.showToast(result.message, 'error');
+    }
+  }
+
+  handleLogout = () => {
+    this.setState({ currentUser: null });
+    localStorage.removeItem('bookhub_current_user');
+    this.clearSessionTimer();
+    this.showToast('Logged out successfully!', 'success');
+  }
+
+  handleSearch = (searchTerm) => {
+    this.handleEnhancedSearch(searchTerm);
+  }
+
+  handleGenreFilter = (genre) => {
+    if (genre === 'search') return;
+    
+    this.setState({ 
+      activeGenre: genre,
+      showSearchResults: false 
+    });
+  }
+
+  // Quick search handlers
+  handleQuickSearch = (searchTerm) => {
+    this.handleEnhancedSearch(searchTerm);
+  }
+
+  // Utility Methods
+  initializeParticles = () => {
+    const container = document.getElementById('particles-container');
+    if (!container) return;
+    
+    const particleCount = 30;
+    
+    for (let i = 0; i < particleCount; i++) {
+      const particle = document.createElement('div');
+      particle.className = 'particle animate-particle-float';
+      
+      const size = Math.random() * 4 + 1;
+      const tx = (Math.random() - 0.5) * 200;
+      const ty = (Math.random() - 0.5) * 200;
+      const colors = [
+        'rgba(37, 99, 235, 0.3)',
+        'rgba(6, 182, 212, 0.3)',
+        'rgba(16, 185, 129, 0.3)',
+        'rgba(245, 158, 11, 0.3)'
+      ];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      
+      particle.style.cssText = `
+        width: ${size}px;
+        height: ${size}px;
+        background: ${color};
+        left: ${Math.random() * 100}%;
+        top: ${Math.random() * 100}%;
+        --tx: ${tx}vw;
+        --ty: ${ty}vh;
+        animation-duration: ${Math.random() * 15 + 10}s;
+        animation-delay: ${Math.random() * 5}s;
+      `;
+      
+      container.appendChild(particle);
+    }
+  }
+
+  setupEventListeners = () => {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (this.state.showLoginModal) this.hideLoginModal();
+        if (this.state.showBookModal) this.hideBookModal();
+        if (this.state.showReviewModal) this.hideReviewModal();
+        if (this.state.showProgressModal) this.hideProgressModal();
+        if (this.state.isMobileMenuOpen) this.closeMobileMenu();
+      }
+    });
+  }
+
+  renderLoginModal = () => {
+    const { showLoginModal, activeTab, activeForm, registerData, loginData, adminData } = this.state;
+
+    if (!showLoginModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in-up">
+        <div className="bg-card rounded-2xl p-8 max-w-md w-full mx-4 card-hover relative">
+          <button 
+            onClick={this.hideLoginModal}
+            className="absolute top-4 right-4 text-secondary hover:text-primary-400 transition-colors duration-300 text-xl"
+          >
+            <i className="fas fa-times"></i>
+          </button>
+
+          <h3 className="text-2xl font-semibold mb-6 text-center gradient-text">Join BookHub</h3>
+          
+          {(activeForm === 'user-login' || activeForm === 'admin-login') && (
+            <div className="flex border-b border-gray-600 mb-6">
+              <button 
+                onClick={() => this.switchLoginTab('user')}
+                className={`login-tab flex-1 py-2 font-medium transition-all duration-300 ${
+                  activeTab === 'user' 
+                    ? 'text-primary-400 border-b-2 border-primary-400' 
+                    : 'text-secondary hover:text-primary-300'
+                }`}
+              >
+                User Login
               </button>
-            </>
-          ) : (
-            <>
-              <button className="btn btn-secondary btn-sm" onClick={() => setActiveModal("login")}>
-                Sign In
+              <button 
+                onClick={() => this.switchLoginTab('admin')}
+                className={`login-tab flex-1 py-2 font-medium transition-all duration-300 ${
+                  activeTab === 'admin' 
+                    ? 'text-primary-400 border-b-2 border-primary-400' 
+                    : 'text-secondary hover:text-primary-300'
+                }`}
+              >
+                Admin Login
               </button>
-              <button className="btn btn-primary btn-sm" onClick={() => setActiveModal("register")}>
-                Join Free
-              </button>
-            </>
+            </div>
           )}
-        </div>
-      </header>
-
-      {/* Hero */}
-      <section className="hero">
-        <h1>Discover Your Next Favorite Book</h1>
-        <p>
-          Explore millions of books, build your personal library, and share your thoughts 
-          with a community of passionate readers. All in a beautiful, clean interface.
-        </p>
-        <div className="hero-actions">
-          <button 
-            className="btn btn-primary btn-lg"
-            onClick={startExploring} {/* FIXED: Now calls startExploring function */}
-          >
-            <span>🔍</span>
-            Start Exploring
-          </button>
-          <button className="btn btn-secondary btn-lg" onClick={loadDemoBooks}>
-            <span>✨</span>
-            View Demo Books
-          </button>
-        </div>
-      </section>
-
-      {/* Stats */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-value">{stats.totalBooks}</div>
-          <div className="stat-label">Books in Library</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{stats.totalReviews}</div>
-          <div className="stat-label">Reviews</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{stats.totalPages}</div>
-          <div className="stat-label">Total Pages</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{stats.readingTime}h</div>
-          <div className="stat-label">Reading Time</div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <main className="main-content">
-        {/* Tabs */}
-        <div className="tabs">
-          <button 
-            className={`tab ${activeTab === "discover" ? "active" : ""}`}
-            onClick={() => setActiveTab("discover")}
-          >
-            🔍 Discover
-          </button>
-          <button 
-            className={`tab ${activeTab === "library" ? "active" : ""}`}
-            onClick={() => setActiveTab("library")}
-          >
-            📚 My Library ({library.length})
-          </button>
-          <button 
-            className={`tab ${activeTab === "reviews" ? "active" : ""}`}
-            onClick={() => setActiveTab("reviews")}
-          >
-            💬 Reviews ({stats.totalReviews})
-          </button>
-        </div>
-
-        {/* Search Section */}
-        {activeTab === "discover" && (
-          <div className="search-section">
-            <div className="search-container">
-              <div className="search-input-wrapper">
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Search for books by title, author, or genre..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && searchBooks(searchQuery)}
+          
+          {activeForm === 'register' && (
+            <button 
+              onClick={this.showUserLogin}
+              className="flex items-center text-secondary hover:text-primary-400 transition-colors duration-300 mb-4 text-sm"
+            >
+              <i className="fas fa-arrow-left mr-2"></i>
+              Back to Login
+            </button>
+          )}
+          
+          {activeForm === 'user-login' && (
+            <form onSubmit={this.handleUserLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2">Username or Email</label>
+                <input 
+                  type="text" 
+                  value={loginData.username}
+                  onChange={(e) => this.handleInputChange('loginData', 'username', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter username or email" 
                 />
               </div>
-              <div className="search-actions">
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => searchBooks(searchQuery)}
-                  disabled={loading}
-                >
-                  {loading ? "Searching..." : "Search"}
-                </button>
-                <button className="btn btn-secondary" onClick={() => setActiveModal("addBook")}>
-                  + Add Book
-                </button>
-              </div>
-            </div>
-
-            {/* Search Results */}
-            {searchResults.length > 0 ? (
               <div>
-                <h3 className="section-title" style={{ marginBottom: "24px" }}>
-                  📚 Search Results ({searchResults.length})
-                </h3>
-                <div className="cards-grid">
-                  {searchResults.map(book => (
-                    <div key={book.id} className="book-card">
-                      <img src={book.thumbnail} alt={book.title} className="book-cover" />
-                      
-                      <h3 className="book-title">{book.title}</h3>
-                      <p className="book-author">
-                        <span>✍️</span>
-                        {book.authors.join(", ")}
-                      </p>
-                      <p className="book-description">{book.description}</p>
-                      
-                      <div className="book-meta">
-                        <div className="book-rating">
-                          <span className="star">★</span>
-                          <span>{book.rating}</span>
-                        </div>
-                        <div className="book-pages">
-                          <span>📄</span>
-                          <span>{book.pages} pages</span>
-                        </div>
-                      </div>
-                      
-                      <div className="book-actions">
-                        <button 
-                          className="btn btn-primary btn-sm"
-                          onClick={() => addToLibrary(book)}
-                        >
-                          Add to Library
-                        </button>
-                        <button 
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            setModalData({ book });
-                            setActiveModal("book");
-                          }}
-                        >
-                          View Details
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <label className="block text-sm font-semibold mb-2">Password</label>
+                <input 
+                  type="password" 
+                  value={loginData.password}
+                  onChange={(e) => this.handleInputChange('loginData', 'password', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter password" 
+                />
               </div>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-icon">🔍</div>
-                <h4 className="empty-title">Start Your Search</h4>
-                <p className="empty-description">
-                  Search for books by title, author, or genre. You can also load demo books to get started.
-                </p>
-                <button className="btn btn-primary" onClick={loadDemoBooks}>
-                  Load Demo Books
-                </button>
+              <div className="flex justify-between items-center">
+                <label className="flex items-center">
+                  <input type="checkbox" className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                  <span className="ml-2 text-sm">Remember me</span>
+                </label>
+                <a href="#" className="text-sm text-primary-400 hover:underline">Forgot password?</a>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Library Section */}
-        {activeTab === "library" && (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "32px" }}>
+              <button type="submit" className="w-full py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-all duration-300 transform hover:scale-105">
+                Let's Go!!!
+              </button>
+              
+              <div className="text-center text-sm mt-4">
+                Don't have an account? <button type="button" onClick={this.showRegistration} className="text-primary-400 hover:underline font-semibold">Sign up now! ✨</button>
+              </div>
+            </form>
+          )}
+          
+          {activeForm === 'admin-login' && (
+            <form onSubmit={this.handleAdminLogin} className="space-y-4">
               <div>
-                <h3 className="section-title">📚 My Personal Library</h3>
-                <p style={{ color: "var(--text-secondary)", marginTop: "8px" }}>
-                  {library.length} books • {stats.totalPages} total pages
-                </p>
+                <label className="block text-sm font-semibold mb-2">Admin Username</label>
+                <input 
+                  type="text" 
+                  value={adminData.username}
+                  onChange={(e) => this.handleInputChange('adminData', 'username', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter admin username" 
+                />
               </div>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button className="btn btn-secondary btn-sm" onClick={exportData}>
-                  📥 Export Data
-                </button>
-                {currentUser?.role === "admin" && (
-                  <button className="btn btn-secondary btn-sm" onClick={clearReviews}>
-                    🗑️ Clear Reviews
-                  </button>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Admin Password</label>
+                <input 
+                  type="password" 
+                  value={adminData.password}
+                  onChange={(e) => this.handleInputChange('adminData', 'password', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter admin password" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Security Code</label>
+                <input 
+                  type="text" 
+                  value={adminData.securityCode}
+                  onChange={(e) => this.handleInputChange('adminData', 'securityCode', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter security code" 
+                />
+              </div>
+              <button type="submit" className="w-full py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-all duration-300 transform hover:scale-105">
+                Admin Login 
+              </button>
+            </form>
+          )}
+          
+          {activeForm === 'register' && (
+            <form onSubmit={this.handleRegistration} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2">Full Name</label>
+                <input 
+                  type="text" 
+                  value={registerData.name}
+                  onChange={(e) => this.handleInputChange('registerData', 'name', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter your Lucky Name" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Username</label>
+                <input 
+                  type="text" 
+                  value={registerData.username}
+                  onChange={(e) => this.handleInputChange('registerData', 'username', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Choose a cool username" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Email</label>
+                <input 
+                  type="email" 
+                  value={registerData.email}
+                  onChange={(e) => this.handleInputChange('registerData', 'email', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Enter your email" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Password</label>
+                <input 
+                  type="password" 
+                  value={registerData.password}
+                  onChange={(e) => this.handleInputChange('registerData', 'password', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Create a strong password" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Confirm Password</label>
+                <input 
+                  type="password" 
+                  value={registerData.confirmPassword}
+                  onChange={(e) => this.handleInputChange('registerData', 'confirmPassword', e.target.value)}
+                  required 
+                  className="w-full px-4 py-3 bg-dark border border-card rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300" 
+                  placeholder="Confirm your password" 
+                />
+              </div>
+              <button type="submit" className="w-full py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-all duration-300 transform hover:scale-105">
+                Create Account 
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  renderMobileMenu = () => {
+    if (!this.state.isMobileMenuOpen) return null;
+
+    return (
+      <div className="md:hidden fixed inset-0 z-40 bg-dark/95 backdrop-blur-sm">
+        <div className="flex flex-col items-center justify-center h-full space-y-8">
+          <button 
+            onClick={this.closeMobileMenu}
+            className="absolute top-6 right-6 text-2xl text-secondary hover:text-primary-400"
+          >
+            <i className="fas fa-times"></i>
+          </button>
+          
+          <a href="#home" onClick={this.closeMobileMenu} className="nav-link text-2xl text-secondary hover:text-primary-400 transition-colors duration-300">Home</a>
+          <a href="#library" onClick={this.closeMobileMenu} className="nav-link text-2xl text-secondary hover:text-primary-400 transition-colors duration-300">My Library</a>
+          <a href="#discover" onClick={this.closeMobileMenu} className="nav-link text-2xl text-secondary hover:text-primary-400 transition-colors duration-300">Discover</a>
+          <a href="#reviews" onClick={this.closeMobileMenu} className="nav-link text-2xl text-secondary hover:text-primary-400 transition-colors duration-300">Reviews</a>
+          <a href="#stats" onClick={this.closeMobileMenu} className="nav-link text-2xl text-secondary hover:text-primary-400 transition-colors duration-300">Stats</a>
+          <a href="#trending" onClick={this.closeMobileMenu} className="nav-link text-2xl text-secondary hover:text-primary-400 transition-colors duration-300">Trending</a>
+        </div>
+      </div>
+    );
+  }
+
+  render() {
+    const { currentUser, showBookModal, showReviewModal, showProgressModal, activeBook, activeGenre, isMobileMenuOpen, showSearchResults, libraryFilter, librarySort } = this.state;
+
+    return (
+      <div className="App">
+        <div id="toast-container"></div>
+
+        {showBookModal && (
+          <div className="book-modal active">
+            <div className="book-modal-content">
+              <button onClick={this.hideBookModal} className="book-modal-close">
+                <i className="fas fa-times"></i>
+              </button>
+              <div className="p-8">
+                {activeBook ? this.renderBookDetailsModal() : (
+                  <div className="flex justify-center items-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                  </div>
                 )}
               </div>
             </div>
+          </div>
+        )}
 
-            {library.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">📚</div>
-                <h4 className="empty-title">Your Library is Empty</h4>
-                <p className="empty-description">
-                  Add books from search results or create your own custom books to start building your library.
-                </p>
+        {/* Review Modal */}
+        {this.renderReviewModal()}
+
+        {/* Progress Modal */}
+        {this.renderProgressModal()}
+
+        <div className="fixed inset-0 z-0 grid-bg"></div>
+        <div id="particles-container" className="fixed inset-0 z-0"></div>
+
+        {/* Mobile Menu */}
+        {this.renderMobileMenu()}
+
+        <nav className="fixed top-0 w-full bg-dark/90 backdrop-blur-sm z-50 border-b border-card">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex justify-between items-center">
+              <a href="#home" className="flex items-center">
+                <div className="h-10 w-10 rounded-full mr-2 bg-primary-600 flex items-center justify-center">
+                  <i className="fas fa-book text-white"></i>
+                </div>
+                <span className="text-xl font-bold gradient-text">BookHub</span>
+              </a>
+              
+              <div className="hidden md:flex space-x-8">
+                <a href="#home" className="nav-link text-secondary hover:text-primary-400 transition-colors duration-300 font-medium">Home</a>
+                <a href="#library" className="nav-link text-secondary hover:text-primary-400 transition-colors duration-300 font-medium">My Library</a>
+                <a href="#discover" className="nav-link text-secondary hover:text-primary-400 transition-colors duration-300 font-medium">Discover</a>
+                <a href="#reviews" className="nav-link text-secondary hover:text-primary-400 transition-colors duration-300 font-medium">Reviews</a>
+                <a href="#stats" className="nav-link text-secondary hover:text-primary-400 transition-colors duration-300 font-medium">Stats</a>
+                <a href="#trending" className="nav-link text-secondary hover:text-primary-400 transition-colors duration-300 font-medium">Trending</a>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                {currentUser && (
+                  <div className="flex items-center space-x-2">
+                    <img src={currentUser.avatar} alt="User" className="h-8 w-8 rounded-full" />
+                    <span className="text-sm font-medium hidden sm:block">{currentUser.name}</span>
+                    <button onClick={this.handleLogout} className="text-secondary hover:text-primary-400 transition-colors duration-300">
+                      <i className="fas fa-sign-out-alt"></i>
+                    </button>
+                  </div>
+                )}
+
+                <button onClick={this.toggleTheme} className="text-secondary hover:text-primary-400 transition-colors duration-300">
+                  <i className="fas fa-moon"></i>
+                </button>
+
+                {!currentUser && (
+                  <button onClick={this.showLoginModal} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors duration-300 flex items-center gap-2">
+                    <i className="fas fa-user"></i>
+                    <span className="hidden sm:block">Login</span>
+                  </button>
+                )}
+
                 <button 
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setActiveTab("discover");
-                    loadDemoBooks();
-                  }}
+                  onClick={this.toggleMobileMenu}
+                  className="md:hidden text-secondary hover:text-primary-400 transition-colors duration-300"
                 >
-                  Browse Demo Books
+                  <i className={`fas ${isMobileMenuOpen ? 'fa-times' : 'fa-bars'} text-xl`}></i>
                 </button>
               </div>
-            ) : (
-              <div className="cards-grid">
-                {library.map(book => {
-                  const bookReviews = reviews[book.id] || [];
-                  
-                  return (
-                    <div key={book.id} className="book-card">
-                      <img src={book.thumbnail} alt={book.title} className="book-cover" />
-                      
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-                        <div>
-                          <h3 className="book-title">{book.title}</h3>
-                          <p className="book-author">
-                            <span>✍️</span>
-                            {book.authors.join(", ")}
-                          </p>
-                        </div>
-                        {book.source === "custom" && (
-                          <span style={{
-                            fontSize: "12px",
-                            background: "rgba(59, 130, 246, 0.1)",
-                            color: "var(--accent-blue)",
-                            padding: "4px 10px",
-                            borderRadius: "20px",
-                            fontWeight: "600"
-                          }}>
-                            ✨ Custom
-                          </span>
-                        )}
-                      </div>
-                      
-                      <p className="book-description">{book.description}</p>
-                      
-                      {/* Reviews Preview */}
-                      {bookReviews.length > 0 && (
-                        <div style={{ marginTop: "16px", padding: "16px", background: "var(--bg-secondary)", borderRadius: "var(--radius-md)" }}>
-                          <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px", color: "var(--text-primary)" }}>
-                            💬 Recent Reviews ({bookReviews.length})
-                          </div>
-                          {bookReviews.slice(0, 2).map((review, index) => (
-                            <div key={index} style={{ marginBottom: "12px", paddingBottom: "12px", borderBottom: index < 1 ? "1px solid var(--border-color)" : "none" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                                <div className="user-avatar" style={{ width: "28px", height: "28px", fontSize: "12px" }}>
-                                  {review.avatar}
-                                </div>
-                                <span style={{ fontWeight: "600", fontSize: "13px" }}>{review.username}</span>
-                                <span style={{ color: "#fbbf24", fontSize: "12px" }}>
-                                  {"★".repeat(review.rating)}
-                                </span>
-                              </div>
-                              <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: "1.5" }}>
-                                {review.text.length > 80 ? `${review.text.substring(0, 80)}...` : review.text}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      <div className="book-actions" style={{ marginTop: "20px" }}>
-                        <button 
-                          className="btn btn-primary btn-sm"
-                          onClick={() => {
-                            setModalData({ book });
-                            setActiveModal("book");
-                          }}
-                        >
-                          Read & Review
-                        </button>
-                        <button 
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => quickAddReview(book.id)}
-                        >
-                          Quick Review
-                        </button>
-                        <button 
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => removeFromLibrary(book.id)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            </div>
           </div>
-        )}
+        </nav>
 
-        {/* All Reviews Section */}
-        {activeTab === "reviews" && (
-          <div>
-            <h3 className="section-title">💬 All Reviews ({stats.totalReviews})</h3>
-            
-            {stats.totalReviews === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">💬</div>
-                <h4 className="empty-title">No Reviews Yet</h4>
-                <p className="empty-description">
-                  Start reviewing books in your library to see them appear here.
-                </p>
-              </div>
-            ) : (
-              <div>
-                {library.filter(book => reviews[book.id]?.length > 0).map(book => (
-                  <div key={book.id} style={{ marginBottom: "32px" }}>
-                    <div style={{ 
-                      display: "flex", 
-                      alignItems: "center", 
-                      gap: "12px", 
-                      marginBottom: "20px",
-                      paddingBottom: "12px",
-                      borderBottom: "1px solid var(--border-color)"
-                    }}>
-                      <img 
-                        src={book.thumbnail} 
-                        alt={book.title} 
-                        style={{ 
-                          width: "60px", 
-                          height: "80px", 
-                          objectFit: "cover", 
-                          borderRadius: "var(--radius-sm)"
-                        }} 
-                      />
-                      <div>
-                        <h4 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "4px" }}>{book.title}</h4>
-                        <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
-                          by {book.authors.join(", ")}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="cards-grid" style={{ gridTemplateColumns: "1fr" }}>
-                      {reviews[book.id].map(review => (
-                        <div key={review.id} className="review-item">
-                          <div className="review-header">
-                            <div className="review-user">
-                              <div className="user-avatar" style={{ background: book.color }}>
-                                {review.avatar}
-                              </div>
-                              <div className="user-info">
-                                <h4>{review.username}</h4>
-                                <span>{new Date(review.date).toLocaleDateString()}</span>
-                              </div>
-                            </div>
-                            <div className="review-rating">
-                              {[...Array(5)].map((_, i) => (
-                                <span key={i} className="star" style={{ color: i < review.rating ? "#fbbf24" : "#e2e8f0" }}>
-                                  ★
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          <p className="review-text">{review.text}</p>
-                        </div>
-                      ))}
-                    </div>
+        <section id="home" className="min-h-screen flex items-center pt-20 relative z-10">
+          <div className="container mx-auto px-6 py-20">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+              <div className="space-y-8 animate-fade-in-up">
+                <div className="space-y-6">
+                  <h1 className="text-5xl lg:text-6xl font-bold leading-tight">
+                    Read, Review, <span className="gradient-text">Vibe</span>
+                  </h1>
+                  <p className="text-lg text-secondary leading-relaxed max-w-2xl">
+                    Join the lit reading community! Track your books, drop fire reviews, and connect with fellow bookworms.
+                  </p>
+                </div>
+
+                <div className="relative max-w-xl">
+                  <input 
+                    type="text" 
+                    placeholder="Search for books, authors, or vibes..." 
+                    className="w-full px-6 py-4 bg-card border border-card rounded-2xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300 pr-12"
+                    onKeyPress={(e) => e.key === 'Enter' && this.handleSearch(e.target.value)}
+                  />
+                  <button className="absolute right-3 top-1/2 transform -translate-y-1/2 text-secondary hover:text-primary-400 transition-colors duration-300">
+                    <i className="fas fa-search text-xl"></i>
+                  </button>
+                </div>
+                <div className="flex space-x-6">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary-400">1.2K+</div>
+                    <div className="text-sm text-secondary">Lit Reviews</div>
                   </div>
-                ))}
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-accent">567</div>
+                    <div className="text-sm text-secondary">Active Readers</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-success">89</div>
+                    <div className="text-sm text-secondary">New This Week</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="library" className="py-20 bg-card relative z-10">
+          <div className="container mx-auto px-6">
+            <div className="text-center mb-16">
+              <h2 className="text-4xl font-bold mb-4 gradient-text">My Library </h2>
+              <p className="text-lg text-secondary max-w-2xl mx-auto">
+                Your personal book collection - organized and lit! 
+              </p>
+            </div>
+
+            {/* UPDATED: Library Controls */}
+            <div className="flex flex-wrap gap-4 mb-8 justify-center">
+              <button 
+                onClick={this.handleAddBook}
+                className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors duration-300 flex items-center gap-2"
+              >
+                <i className="fas fa-plus"></i>
+                Add Book
+              </button>
+              
+              {/* Filter Dropdown */}
+              <div className="relative">
+                <select 
+                  value={libraryFilter}
+                  onChange={(e) => this.handleLibraryFilter(e.target.value)}
+                  className="px-6 py-3 bg-dark border border-primary-600 text-primary-600 font-semibold rounded-lg hover:bg-primary-600 hover:text-white transition-all duration-300 appearance-none pr-10"
+                >
+                  <option value="all">All Books</option>
+                  <option value="to-read">To Read</option>
+                  <option value="reading">Reading</option>
+                  <option value="completed">Completed</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-primary-600">
+                  <i className="fas fa-filter"></i>
+                </div>
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="relative">
+                <select 
+                  value={librarySort}
+                  onChange={(e) => this.handleLibrarySort(e.target.value)}
+                  className="px-6 py-3 bg-dark border border-accent text-accent font-semibold rounded-lg hover:bg-accent hover:text-white transition-all duration-300 appearance-none pr-10"
+                >
+                  <option value="title">Sort by Title</option>
+                  <option value="author">Sort by Author</option>
+                  <option value="date-added">Sort by Date Added</option>
+                  <option value="progress">Sort by Progress</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-accent">
+                  <i className="fas fa-sort"></i>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {this.renderUserLibrary()}
+            </div>
+          </div>
+        </section>
+
+        <section id="discover" className="py-20 relative z-10">
+          <div className="container mx-auto px-6">
+            <div className="text-center mb-16">
+              <h2 className="text-4xl font-bold mb-4 gradient-text">
+                {showSearchResults ? 'Search Results' : 'Discover New Reads'}
+              </h2>
+              <p className="text-lg text-secondary max-w-2xl mx-auto">
+                {showSearchResults 
+                  ? 'Books found from Google Books API' 
+                  : 'Find your next obsession! Explore books across genres and vibes.'}
+              </p>
+            </div>
+
+            {/* Search Results Header */}
+            {showSearchResults && (
+              <div className="flex justify-between items-center mb-8">
+                <button 
+                  onClick={this.clearSearchResults}
+                  className="px-4 py-2 bg-card text-secondary rounded-lg hover:bg-primary-600 hover:text-white transition-colors duration-300 flex items-center gap-2"
+                >
+                  <i className="fas fa-arrow-left"></i>
+                  Back to All Books
+                </button>
+                <span className="text-secondary">
+                  Found {this.state.searchResults.length} books
+                </span>
               </div>
             )}
-          </div>
-        )}
-      </main>
 
-      {/* Footer */}
-      <footer className="site-footer">
-        <div className="footer-content">
-          <div className="logo-text" style={{ fontSize: "28px", marginBottom: "8px" }}>BookHub</div>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "20px" }}>
-            A beautiful, clean interface for book lovers to discover, organize, and review their favorite reads.
-          </p>
-          
-          <div className="footer-links">
-            <a href="#" className="footer-link" onClick={(e) => { e.preventDefault(); setActiveTab("discover"); }}>Discover</a>
-            <a href="#" className="footer-link" onClick={(e) => { e.preventDefault(); setActiveTab("library"); }}>Library</a>
-            <a href="#" className="footer-link" onClick={(e) => { e.preventDefault(); setActiveModal("addBook"); }}>Add Book</a>
-            <a href="#" className="footer-link" onClick={(e) => { e.preventDefault(); setActiveModal("login"); }}>Sign In</a>
-          </div>
-          
-          <p style={{ fontSize: "14px", color: "var(--text-muted)", marginTop: "24px" }}>
-           BookHub • Crafted with ❤️ by the Team Neurix
-          </p>
-        </div>
-      </footer>
+            <div className="flex flex-wrap gap-3 mb-8 justify-center">
+              {!showSearchResults && ['all', 'indian', 'fiction', 'classics'].map(genre => (
+                <button
+                  key={genre}
+                  onClick={() => this.handleGenreFilter(genre)}
+                  className={`px-4 py-2 rounded-full transition-all duration-300 ${
+                    activeGenre === genre 
+                      ? 'bg-primary-600 text-white shadow-lg transform scale-105' 
+                      : 'bg-card text-secondary hover:bg-primary-600 hover:text-white hover:transform hover:scale-105'
+                  }`}
+                >
+                  {genre === 'all' ? 'All Genres' : genre.charAt(0).toUpperCase() + genre.slice(1)}
+                </button>
+              ))}
+            </div>
 
-      {/* Modals */}
-      {activeModal === "login" && (
-        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <div onClick={e => e.stopPropagation()}>
-            <LoginModal />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {showSearchResults ? this.renderSearchResults() : this.renderDiscoverBooks()}
+            </div>
           </div>
-        </div>
-      )}
+        </section>
 
-      {activeModal === "register" && (
-        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <div onClick={e => e.stopPropagation()}>
-            <RegisterModal />
-          </div>
-        </div>
-      )}
+        <section id="reviews" className="py-20 bg-card relative z-10">
+          <div className="container mx-auto px-6">
+            <div className="text-center mb-16">
+              <h2 className="text-4xl font-bold mb-4 gradient-text">Community Reviews </h2>
+              <p className="text-lg text-secondary max-w-2xl mx-auto">
+                See what the community is saying about their latest reads!!!
+              </p>
+            </div>
 
-      {activeModal === "addBook" && (
-        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <div onClick={e => e.stopPropagation()}>
-            <AddBookModal />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {this.renderReviews()}
+            </div>
           </div>
-        </div>
-      )}
+        </section>
 
-      {activeModal === "book" && modalData.book && (
-        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <div onClick={e => e.stopPropagation()}>
-            <BookModal book={modalData.book} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
+        {this.renderLoginModal()}
+      </div>
+    );
+  }
 }
 
-export default App;
+export default BookHubApp;
