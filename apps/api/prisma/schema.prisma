@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id             String           @id @default(uuid())
+  username       String           @unique
+  email          String           @unique
+  passwordHash   String?
+  role           String           @default("user")
+  avatar         String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  clerkId        String?          @unique
+  activityLogs   ActivityLog[]
+  adminLogs      AdminLog[]
+  comments       Comment[]
+  favorites      Favorite[]
+  likes          Like[]
+  notifications  Notification[]
+  ratings        Rating[]
+  readingHistory ReadingHistory[]
+  readingLists   ReadingList[]
+  replies        Reply[]
+  reports        Report[]
+  reviews        Review[]
+  sessions       Session[]
+  wishlist       Wishlist[]
+}
+
+model Book {
+  id             String           @id @default(uuid())
+  title          String
+  description    String?
+  thumbnail      String?
+  pages          Int?
+  publishedYear  String?
+  isbn           String?
+  averageRating  Float            @default(0.0)
+  color          String?
+  pdfUrl         String?
+  hindiPdfUrl    String?
+  contentPreview String?
+  language       String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  digitalBook    DigitalBook?
+  favorites      Favorite[]
+  ratings        Rating[]
+  readingHistory ReadingHistory[]
+  reviews        Review[]
+  wishlist       Wishlist[]
+  authors        Author[]         @relation("AuthorToBook")
+  categories     Category[]       @relation("BookToCategory")
+  readingLists   ReadingList[]    @relation("BookToReadingList")
+}
+
+model Author {
+  id    String @id @default(uuid())
+  name  String @unique
+  books Book[] @relation("AuthorToBook")
+}
+
+model Category {
+  id    String @id @default(uuid())
+  name  String @unique
+  books Book[] @relation("BookToCategory")
+}
+
+model Review {
+  id          String    @id @default(uuid())
+  userId      String
+  bookId      String
+  title       String?
+  content     String
+  vibe        String?
+  ratingValue Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sticker     String?
+  comments    Comment[]
+  likes       Like[]
+  reports     Report[]
+  book        Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Rating {
+  id        String   @id @default(uuid())
+  userId    String
+  bookId    String
+  value     Int
+  createdAt DateTime @default(now())
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  userId    String
+  reviewId  String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies   Reply[]
+}
+
+model Reply {
+  id        String   @id @default(uuid())
+  userId    String
+  commentId String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  userId    String
+  reviewId  String
+  createdAt DateTime @default(now())
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reviewId])
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  bookId    String
+  createdAt DateTime @default(now())
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+}
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String
+  bookId    String
+  createdAt DateTime @default(now())
+  book      Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+}
+
+model ReadingHistory {
+  id         String   @id @default(uuid())
+  userId     String
+  bookId     String
+  pagesRead  Int      @default(0)
+  status     String   @default("PLAN_TO_READ")
+  lastReadAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  book       Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+}
+
+model ReadingList {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  books       Book[]   @relation("BookToReadingList")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id        String   @id @default(uuid())
+  userId    String
+  reviewId  String
+  reason    String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdminLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DigitalBook {
+  id        String    @id @default(uuid())
+  bookId    String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  chapters  Chapter[]
+  book      Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+}
+
+model Chapter {
+  id            String      @id @default(uuid())
+  digitalBookId String
+  title         String
+  content       String
+  chapterNumber Int
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  digitalBook   DigitalBook @relation(fields: [digitalBookId], references: [id], onDelete: Cascade)
+
+  @@unique([digitalBookId, chapterNumber])
+}
