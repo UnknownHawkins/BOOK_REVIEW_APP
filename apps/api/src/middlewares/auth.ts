@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { UnauthorizedError, ForbiddenError } from "../utils/errors";
 import { prisma } from "../config/db";
-import { clerkClient } from "@clerk/clerk-sdk-node";
+import { clerkClient, verifyToken } from "@clerk/express";
 
 export const requireAuth = async (
   req: Request,
@@ -27,7 +27,9 @@ export const requireAuth = async (
     // Verify token with Clerk
     let decoded;
     try {
-      decoded = await clerkClient.verifyToken(token);
+      decoded = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+      });
     } catch (err) {
       throw new UnauthorizedError("Invalid or expired Clerk token");
     }
@@ -113,7 +115,9 @@ export const optionalAuth = async (
     }
 
     if (token) {
-      const decoded = await clerkClient.verifyToken(token);
+      const decoded = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+      });
       let localUser = await prisma.user.findUnique({
         where: { clerkId: decoded.sub },
         select: { id: true, username: true, role: true },

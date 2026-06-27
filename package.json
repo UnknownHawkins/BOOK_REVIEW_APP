@@ -16,7 +16,7 @@
     "db:generate": "cd apps/api && npx prisma generate",
     "db:migrate": "cd apps/api && npx prisma migrate dev",
     "db:studio": "cd apps/api && npx prisma studio",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
