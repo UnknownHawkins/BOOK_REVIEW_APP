@@ -32,9 +32,14 @@ app.use(
 );
 
 // CORS setup
+let allowedOrigin = process.env.CLIENT_URL || "http://localhost:3000";
+if (allowedOrigin.endsWith("/")) {
+  allowedOrigin = allowedOrigin.slice(0, -1);
+}
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: allowedOrigin,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
