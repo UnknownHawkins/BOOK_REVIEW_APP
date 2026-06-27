@@ -93,8 +93,16 @@ export default function UserManagementPage() {
               {users.map((u: any) => (
                 <tr key={u.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-950/20">
                   <td className="p-4">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold dark:bg-blue-900/50">
-                      {u.avatar || u.username.charAt(0).toUpperCase()}
+                    <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold dark:bg-blue-900/50 overflow-hidden">
+                      {u.avatar && (u.avatar.startsWith("http") || u.avatar.startsWith("/") || u.avatar.startsWith("data:")) ? (
+                        <img
+                          src={u.avatar}
+                          alt={u.username}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        u.avatar || u.username.charAt(0).toUpperCase()
+                      )}
                     </div>
                   </td>
                   <td className="p-4 font-bold">{u.username}</td>

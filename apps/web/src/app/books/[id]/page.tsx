@@ -736,8 +736,16 @@ export default function BookDetailPage() {
                     {/* Review Header */}
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-full bg-[#d4e9e2] text-[#00754A] flex items-center justify-center font-bold text-sm">
-                          {review.user.avatar || review.user.username.charAt(0).toUpperCase()}
+                        <div className="h-9 w-9 rounded-full bg-[#d4e9e2] text-[#00754A] flex items-center justify-center font-bold text-sm overflow-hidden">
+                          {review.user.avatar && (review.user.avatar.startsWith("http") || review.user.avatar.startsWith("/") || review.user.avatar.startsWith("data:")) ? (
+                            <img
+                              src={review.user.avatar}
+                              alt={review.user.username}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            review.user.avatar || review.user.username.charAt(0).toUpperCase()
+                          )}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
