@@ -138,9 +138,23 @@ export default function BookDetailPage() {
       setShowReviewForm(false);
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || "Could not save review");
+      const backendMsg = err.response?.data?.message;
+      const errors = err.response?.data?.errors;
+      if (errors && Array.isArray(errors) && errors.length > 0) {
+        toast.error(errors[0].message);
+      } else {
+        toast.error(backendMsg || "Could not save review");
+      }
     },
   });
+
+  const handlePostReview = () => {
+    if (reviewContent.trim().length < 10) {
+      toast.error("Review details must be at least 10 characters");
+      return;
+    }
+    reviewMutation.mutate();
+  };
 
   // 5. Mutate: Like Review
   const likeMutation = useMutation({
@@ -691,7 +705,7 @@ export default function BookDetailPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => reviewMutation.mutate()}
+                    onClick={handlePostReview}
                     disabled={reviewMutation.isPending}
                     className="btn-primary-filled text-sm font-bold cursor-pointer"
                   >
