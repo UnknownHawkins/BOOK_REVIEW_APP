@@ -1,238 +1,107 @@
----
+# 📚 BookHub – Monorepo Digital Library & Reading Platform
 
-# 📚 **BookHub – Digital Library & Reading Platform**
-
-A modern, feature-rich **Digital Library & Social Reading Platform** built with **React**, designed for smooth book discovery, personal tracking, reviews, and an interactive reading community.
-
-<p align="center">
-  <img src="https://img.shields.io/badge/React-18.2-blue?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/Status-Active-success?style=for-the-badge"/>
-</p>
+BookHub is a modern, feature-rich **Digital Library & Social Reading Platform** structured as a high-performance **Turborepo Monorepo**. It features a Next.js frontend, an Express API backend, serverless PostgreSQL with Prisma, and DeepSeek AI-driven full-length E-book generation.
 
 ---
 
-## ✨ **Features Overview**
+## 🏗️ Architecture & Tech Stack
 
-### 🎯 **Core Features**
+This project is organized as a monorepo workspace:
 
-* 📖 **Book Discovery** – Search & browse millions of books
-* 📚 **Digital Library** – Personal bookshelf + progress tracking
-* ⭐ **Smart Reviews** – Ratings + detailed review system
-
----
-
-## 🔧 **Technical Features**
-
-* 🔍 **Google Books API Search**
-* 📱 **Fully Responsive UI**
-
----
-
-## 🛡️ **Security Features**
-
-* 🔐 **Encrypted password hashing**
-* 🔒 **Encrypted local storage**
+* **`/apps/web` (Next.js Frontend)**
+  * Next.js 15 (App Router, Server & Client Components)
+  * User Authentication via **Clerk**
+  * State Management via **Zustand** & **React Query (TanStack)**
+  * UI/Styling via **Tailwind CSS**, **Framer Motion**, and **Lucide React**
+* **`/apps/api` (Express Backend)**
+  * Express.js server with TypeScript (`tsx` runner)
+  * Database access via **Prisma ORM** connecting to **Neon PostgreSQL**
+  * Caching & Rate Limiting via **Upstash Redis**
+  * Logging via **Winston** & HTTP logger **Morgan**
+  * Interactive API Docs at `/api/docs` via **Swagger UI**
+* **`/packages/shared` (Shared Utilities)**
+  * Shared Zod validation schemas (Register, Login, Books, Reviews) to ensure complete frontend/backend type-safety.
 
 ---
 
-## 🚀 **Quick Start Guide**
+## ✨ Key Capabilities
 
-### ✔️ **Prerequisites**
+* 📖 **Smart Book Search** – Query both your local library catalog and the **Google Books API** simultaneously.
+* 💾 **Auto-Upsert Cataloging** – Clicking to read or review any Google Books search result automatically stores/upserts it in your Neon database, letting users immediately write reviews and ratings.
+* 🤖 **DeepSeek AI E-Books** – Instantly generate a full-length digital book from any title. Generates 5 chapters of comprehensive, paragraph-by-paragraph complete reading text (at least 1500–2000 words per chapter).
+* 📝 **Community Reviews & Vibes** – Share ratings (1-5 stars), text headlines, vibes (Positive, Neutral, Mixed, Critical), and award sticker badges (Masterpiece, Insightful, etc.) to customize books.
 
-* Node.js 14+
-* npm or yarn
+---
 
-### ✔️ **Installation**
+## 🚀 Local Development Guide
 
+### 1. Prerequisites
+* Node.js >= 18
+* npm >= 9
+
+### 2. Installation
+Clone the repository and install all workspace dependencies from the root directory:
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/bookhub.git
-
-# Go to directory
-cd bookhub
-
-# Install dependencies
+git clone https://github.com/UnknownHawkins/BOOK_REVIEW_APP.git
+cd BOOK_REVIEW_APP
 npm install
-
-# Start development server
-npm start
-
-# Build for production
-npm run build
 ```
 
-### ✔️ **Environment Setup**
+### 3. Environment Setup
 
-Create `.env` in the root:
-
-```
-REACT_APP_GOOGLE_BOOKS_API_KEY=your_api_key
-REACT_APP_NAME=BookHub
-```
-
----
-
-## 📖 **How to Use**
-
-### 👤 **For Readers**
-
-* Create your account
-* Discover trending & recommended books
-* Add books to your library
-* Track reading progress (with percentage)
-* Submit reviews, ratings, and vibe checks
-
-### 🛠️ **For Administrators**
-
-**Default Admin Login**
-
-```
-Username: Neurix
-Password: Neurix@7217secure
-Security Code: PasswordHighzacked
+#### Backend Environment (`/apps/api/.env`)
+Create a `.env` file inside `apps/api/`:
+```env
+DATABASE_URL="postgresql://neondb_owner:...&pgbouncer=true"
+DIRECT_URL="postgresql://neondb_owner:..."
+PORT=5000
+NODE_ENV=development
+JWT_SECRET="your_jwt_secret"
+DEEPSEEK_API_KEY="your_deepseek_key"
+GEMINI_API_KEY="your_gemini_key"
+GOOGLE_BOOKS_API_KEY="your_google_books_key"
+UPSTASH_REDIS_REST_URL="https://..."
+UPSTASH_REDIS_REST_TOKEN="..."
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+CLERK_SECRET_KEY="sk_test_..."
 ```
 
-Admin capabilities:
+#### Frontend Environment (`/apps/web/.env.local`)
+Create a `.env.local` file inside `apps/web/`:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
-* User management
-* Review & content moderation
-* System analytics dashboard
-
----
-
-### 📚 **Book Management**
-
-* One-click **Add to Library**
-* Progress tracking with progress bars
-* Multiple reading formats
-
-### ⭐ **Review System**
-
-* 1–5 star rating slider
-
-### 🔍 **Search & Discovery**
-
-* Google Books API
-* Genre filters (Indian classics, fiction, etc.)
-* Real-time search suggestions
-
----
-
-## 🎯 **Google Books API Integration**
-
-```javascript
-const searchBooks = async (query) => {
-  const response = await fetch(
-    `https://www.googleapis.com/books/v1/volumes?q=${query}&key=API_KEY`
-  );
-  return response.json();
-};
+# Clerk Auth
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/auth/login
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/auth/register
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
 ```
 
----
-
-## 🔒 **Security Implementations**
-
-### Authentication
-* 30-minute session timeout
-* Lock account after 5 wrong login attempts
-
-### Data Protection
-
-* Encrypted local storage
-* Sanitized user inputs
-* Brute-force detection
-
----
-
-## 📱 **Responsive Design**
-
-Built mobile-first with:
-
-* Flexible grid layout
-* Touch-friendly UI
-* Works on all devices (mobile/tablet/desktop)
-
----
-
-## 🛠️ **Development Scripts**
-
-| Command         | Description      |
-| --------------- | ---------------- |
-| `npm start`     | Start dev server |
-| `npm run build` | Production build |
-| `npm test`      | Run tests        |
-| `npm run eject` | Eject CRA        |
-
----
-
-## 🧹 **Code Style**
-
-* Component-based structure
-* Clean naming & reusable components
-
----
-
-## 🤝 **Contributing**
-
-1. Fork the repository
-2. Create a branch
-3. Commit with meaningful messages
-4. Push changes
-5. Open a Pull Request
-
-### Contribution Rules
-
-* Follow code style
-* Comment complex logic
-* Add tests if needed
-* Update docs for major changes
-
----
-
-## 🐛 **Troubleshooting**
-
-### ⚠️ Common Issues
-
-* **API Errors** → Check your Google Books API key
-* **Build Errors** → Delete `node_modules` and reinstall
-* **Slow Performance** → Inspect browser console
-
-### 🧪 **Debug Mode**
-
+### 4. Running the Dev Servers
+Run the full workspace in development mode:
+```bash
+npm run dev
 ```
-localStorage.setItem('debug', 'true');
-```
+* Frontend will run at [http://localhost:3000](http://localhost:3000)
+* Backend API will run at [http://localhost:5000](http://localhost:5000)
 
 ---
 
-## 📄 **License**
+## 🌐 Production Deployment
 
-Licensed under the **MIT License**.
+### Frontend (Vercel)
+* **Root Directory:** `apps/web` (with outer file access enabled for monorepos).
+* **Build Command:** `cd ../.. && npx turbo run build --filter=bookhub-web`
+* **Output Directory:** Default (`.next`)
+* **Environment Variables:** Provide `NEXT_PUBLIC_API_URL` pointing to your Render server (with `/api` suffix) and your Clerk credentials.
 
----
-
-## 🙏 **Acknowledgments**
-
-* Google Books API
-* React Community
-* Font Awesome
-* Tailwind CSS
-
----
-
-## 📞 **Support**
-* 📧 Email: **[jonsnower07@gmail.com](mailto:jonsnower07@gmail.com)**
-
----
-
-<div align="center">
-
-### Made with ❤️ by Team Neurix
-
-**Happy Reading! 📚**
-
-</div>
-
----
+### Backend (Render)
+* **Web Service:** Deploy the node application.
+* **Root Directory:** `apps/api`
+* **Build Command:** `npm install && npx prisma generate`
+* **Start Command:** `npx tsx src/index.ts`
+* **CORS Settings:** Set the `CLIENT_URL` environment variable on Render to your Vercel URL (e.g. `https://your-app.vercel.app`, no trailing slash) to permit API requests.
