@@ -101,22 +101,23 @@ export const getOrCreateDigitalBook = async (req: Request, res: Response, next: 
 
       const prompt = `
         You are an expert digital librarian and academic literary scholar.
-        Generate a structured digital book companion for the book titled "${book.title}" by author "${authorNames}".
-        Since the original text might be copyrighted, you must generate a highly comprehensive, chapter-by-chapter detailed reading version of the book's content.
-        It should contain detailed narratives, key dialogues, concepts, themes, and summaries that serve as a complete, highly readable digital book for a student or reader.
+        Generate a highly detailed, comprehensive, and complete digital book reading version for the book titled "${book.title}" by author "${authorNames}".
+        Since the original text might be copyrighted, you must generate a highly comprehensive, paragraph-by-paragraph, word-for-word style complete reading narrative of the book's content.
+        It should NOT be a simple summary. It must be a complete, fully fleshed-out readable text, written in a paragraph-by-paragraph, highly detailed style that mirrors the full book's events, dialogues, character monologues, descriptions, and depth.
+        Provide maximum details for each chapter.
         
         Generate exactly 5 chapters. Each chapter must contain:
         1. chapterNumber: number (1, 2, 3, 4, 5)
         2. title: a specific, descriptive chapter title
-        3. content: a very long, comprehensive, and engaging readable text (at least 600-800 words per chapter) containing the chapter's storyline, deep details, key moments, character perspectives, and lessons. Format with standard paragraphs and proper spacing.
+        3. content: an extremely long, fully detailed, and comprehensive readable text (at least 1500-2000 words per chapter) containing the full storyline, paragraph-by-paragraph narrative details, character actions, full dialogues, and key scenes in maximum depth. Format with standard paragraphs and proper spacing.
 
         Format your output strictly as a JSON object like this:
         {
           "chapters": [
             {
               "chapterNumber": 1,
-              "title": "Introduction to the Epic",
-              "content": "A very long detailed readable content of at least 600 words..."
+              "title": "...",
+              "content": "..."
             },
             ...
           ]

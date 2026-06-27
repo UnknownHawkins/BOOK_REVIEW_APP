@@ -189,6 +189,32 @@ export const createBook = async (req: Request, res: Response, next: NextFunction
   try {
     const validatedData = await CreateBookSchema.parseAsync(req.body);
 
+    // Check if book with same title and authors already exists
+    const existingBook = await prisma.book.findFirst({
+      where: {
+        title: validatedData.title,
+        authors: {
+          some: {
+            name: { in: validatedData.authors }
+          }
+        }
+      },
+      include: {
+        authors: true,
+        categories: true,
+        digitalBook: {
+          select: { id: true }
+        }
+      }
+    });
+
+    if (existingBook) {
+      return res.status(200).json({
+        status: "success",
+        book: existingBook,
+      });
+    }
+
     // Check if authors exist or create them
     const authorIds = [];
     for (const name of validatedData.authors) {
