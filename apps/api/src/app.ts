@@ -21,7 +21,39 @@ import searchRouter from "./routes/search";
 const app = express();
 
 // Security HTTP headers
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://clerk.accounts.dev", "https://*.clerk.accounts.dev", "https://*.clerk.com"],
+        connectSrc: ["'self'", "https://clerk.accounts.dev", "https://*.clerk.accounts.dev", "https://*.clerk.com"],
+        imgSrc: ["'self'", "data:", "https://img.clerk.com", "https://*.clerk.accounts.dev"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        fontSrc: ["'self'", "data:"],
+        frameSrc: ["'self'", "https://clerk.accounts.dev", "https://*.clerk.accounts.dev", "https://*.clerk.com"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+    crossOriginResourcePolicy: { policy: "same-site" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    hsts: {
+      maxAge: 63072000,
+      includeSubDomains: true,
+      preload: true,
+    },
+  })
+);
+
+// Add Permissions-Policy header
+app.use((req, res, next) => {
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+  );
+  next();
+});
 
 // Logging
 const morganFormat = process.env.NODE_ENV === "production" ? "combined" : "dev";
